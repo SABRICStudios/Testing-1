@@ -1,0 +1,210 @@
+body{
+    margin: 0%;
+    padding: 0%;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    background-color: #525252;
+    height: 100vh;
+}
+
+.canvas{
+    width: 90%;
+    height: calc(100vh - 17vh);
+    margin: auto;
+    margin-top: 7%;
+    margin-bottom: 20px;
+    padding-bottom: 0%;
+    background-color: #ffffff;
+}
+#editorCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.toolbar{
+    width: 100vw;
+    height: 10vh;
+    margin-top: auto;
+    background-color: #3B3B3B;
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    flex-shrink: 0;
+}
+
+.toolbar span{
+    border: none;
+    outline: none;
+}
+
+.tool-btn{
+    height: 30px;
+    width: 100px;
+    border: none;
+    border-radius: 6px;
+    margin: 2px;
+}
+
+
+
+/*CSS for curve tool
+
+/* Interactive SVG node points inside curves editor graphs */
+.svg-curve-node {
+    fill: #1a1a1a;
+    stroke: #00adb5;
+    stroke-width: 2px;
+    cursor: grab;
+    transition: r 0.1s ease, stroke-width 0.1s ease;
+}
+
+.svg-curve-node:hover,
+.svg-curve-node.active-node {
+    r: 7px;
+    stroke-width: 3px;
+    fill: #ffffff;
+}
+
+.svg-curve-node:active {
+    cursor: grabbing;
+}
+
+/* Channel button selectors configuration rules tracking active color states */
+.curve-channel-btn {
+    transition: background 0.2s, color 0.2s;
+}
+
+
+
+/*mixer 
+
+/* Mixer Brush State Toggle Tweak Rules */
+.mixer-toolbar-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 300px; /* Adjust width to match your existing sidebar layout sizes if needed */
+    height: 100%;
+    background-color: #1a1a1e; /* Deep dark palette matching layout aesthetics */
+    color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    padding: 20px 15px;
+    z-index: 1000; /* Forces panel visibility cleanly over your standard mainToolBar components */
+    border-right: 1px solid #2d2d35;
+}
+
+.mixer-toolbar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 25px;
+}
+
+.mixer-btn-back {
+    background: transparent;
+    border: none;
+    color: #00adb5;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+}
+
+.mixer-btn-back:hover {
+    color: #00fff5;
+}
+
+.mixer-title {
+    font-weight: 600;
+    font-size: 16px;
+    font-family: sans-serif;
+}
+
+.mixer-toolbar-body {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.control-label-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-family: sans-serif;
+    color: #b5b5be;
+}
+
+.control-group input[type="range"] {
+    width: 100%;
+    accent-color: #00adb5;
+    cursor: pointer;
+}
+
+.mixer-toolbar-footer {
+    margin-top: auto;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.mixer-btn {
+    flex: 1;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 4px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 14px;
+    font-family: sans-serif;
+}
+
+.mixer-btn-discard {
+    background-color: #2d2d35;
+    color: #ef4444;
+}
+
+.mixer-btn-discard:hover {
+    background-color: #3f3f4a;
+}
+
+.mixer-btn-confirm {
+    background-color: #00adb5;
+    color: #ffffff;
+}
+
+.mixer-btn-confirm:hover {
+    background-color: #02c2cc;
+}
+
+/*Selection
+
+/* Selection Sub-Mode Active Interaction States */
+.selection-mode-btn:hover {
+    background: #333 !important;
+    border-color: #00adb5 !important;
+}
+
+.selection-mode-btn.active {
+    background: #00adb5 !important;
+    border-color: #00adb5 !important;
+    color: #111 !important;
+}
