@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Visuals Photo Editor</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="photo_editor.css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    </head>
+    <body>
+        <div id="canvas" class="canvas">
+            <canvas id="editorCanvas"></canvas>
+        </div>
+<!-----------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+                            Start of Adjust tool          
+
+
+
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------>
+
+        <svg style="display: none;">
+          <defs>
+            <filter id="temperatureMatrixFilter">
+              <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+            </filter>
+            
+            <filter id="tintMatrixFilter">
+              <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+            </filter>
+          </defs>
+        </svg>
+
+<!-- Master Adjustment Panel Container -->
+        <div id="adjustPanel" class="adjust-panel" style="display: none;">
+            <!-- Tool Selection Gallery Menu -->
+            <div id="adjustGallery" class="adjust-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 12px 8px; -webkit-overflow-scrolling: touch;">
+                
+                <!-- Light & Exposure Tools -->
+                <button type="button" data-target="exposureSliderControl" class="gallery-item-btn" id="exposureToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-sun-o"></i>
+                    <span>Exposure</span>
+                </button>
+                <button type="button" data-target="brightnessSliderControl" class="gallery-item-btn" id="brightnessToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-lightbulb-o"></i>
+                    <span>Brightness</span>
+                </button>
+                <button type="button" data-target="contrastToolBtn" class="gallery-item-btn" id="contrastToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-adjust"></i>
+                    <span>Contrast</span>
+                </button>
+                <button type="button" data-target="highlightsSliderControl" class="gallery-item-btn" id="highlightsToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-circle-o"></i>
+                    <span>Highlights</span>
+                </button>
+                <button type="button" data-target="shadowsSliderControl" class="gallery-item-btn" id="shadowsToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-circle"></i>
+                    <span>Shadows</span>
+                </button>
+
+                <!-- Color & Tone Tools -->
+                <button type="button" data-target="temperatureSliderControl" class="gallery-item-btn" id="tempToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-thermometer-half"></i>
+                    <span>Temperature</span>
+                </button>
+                <button type="button" data-target="tintSliderControl" class="gallery-item-btn" id="tintToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-tint"></i>
+                    <span>Tint</span>
+                </button>
+                <button type="button" data-target="saturationSliderControl" class="gallery-item-btn" id="saturationToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-sliders"></i>
+                    <span>Saturation</span>
+                </button>
+                <button type="button" data-target="vibranceSliderControl" class="gallery-item-btn" id="vibranceToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-bolt"></i>
+                    <span>Vibrance</span>
+                </button>
+
+                <!-- Detail & Texture Tools -->
+                <button type="button" data-target="claritySliderControl" class="gallery-item-btn" id="clarityToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-magic"></i>
+                    <span>Clarity</span>
+                </button>
+                <button type="button" data-target="vignetteSliderControl" class="gallery-item-btn" id="vignetteToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-dot-circle-o"></i>
+                    <span>Vignette</span>
+                </button>
+                <button type="button" data-target="sharpenSliderControl" class="gallery-item-btn" id="sharpenToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+                    <i class="fa fa-eye"></i>
+                    <span>Sharpen</span>
+                </button>
+            </div>
+            
+            <!-- Exposure Instrument Slider Panel -->
+            <div class="slider-group" id="exposureSliderControl" style="display: none;">
+                <label for="exposureSlider">Exposure</label>
+                <div class="slider-control">
+                    <span class="dark-label">Dark</span>
+                    <input type="range" id="exposureSlider" min="-4" max="4" step="0.1" value="0">
+                    <span class="bright-label">Bright</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmExposureBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardExposureBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Brightness Instrument Slider Panel -->
+            <div class="slider-group" id="brightnessSliderControl" style="display: none;">
+                <label for="brightnessSlider">Brightness</label>
+                <div class="slider-control">
+                    <span class="dark-label">Dark</span>
+                    <input type="range" id="brightnessSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Bright</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmBrightnessBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardBrightnessBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Contrast Instrument Slider Panel -->
+            <div class="slider-group" id="contrastSliderControl" style="display: none;">
+                <label for="contrastSlider">Contrast</label>
+                <div class="slider-control">
+                    <span class="dark-label">Less</span>
+                    <input type="range" id="contrastSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">More</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmContrastBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardContrastBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Highlights Instrument Slider Panel -->
+            <div class="slider-group" id="highlightsSliderControl" style="display: none;">
+                <label for="highlightsSlider">Highlights</label>
+                <div class="slider-control">
+                    <span class="dark-label">Recover</span>
+                    <input type="range" id="highlightsSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Boost</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmHighlightsBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardHighlightsBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Shadows Instrument Slider Panel -->
+            <div class="slider-group" id="shadowsSliderControl" style="display: none;">
+                <label for="shadowsSlider">Shadows</label>
+                <div class="slider-control">
+                    <span class="dark-label">Darken</span>
+                    <input type="range" id="shadowsSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Lighten</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmShadowsBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardShadowsBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Temperature Instrument Slider Panel -->
+            <div class="slider-group" id="temperatureSliderControl" style="display: none;">
+                <label for="tempSlider">Temperature</label>
+                <div class="slider-control">
+                    <span class="cool-label">Cool</span>
+                    <input type="range" id="tempSlider" min="-100" max="100" value="0">
+                    <span class="warm-label">Warm</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmTempBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardTempBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tint Instrument Slider Panel -->
+            <div class="slider-group" id="tintSliderControl" style="display: none;">
+                <label for="tintSlider">Tint</label>
+                <div class="slider-control">
+                    <span class="dark-label">Green</span>
+                    <input type="range" id="tintSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Magenta</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmTintBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardTintBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Saturation Instrument Slider Panel -->
+            <div class="slider-group" id="saturationSliderControl" style="display: none;">
+                <label for="saturationSlider">Saturation</label>
+                <div class="slider-control">
+                    <span class="dark-label">Mute</span>
+                    <input type="range" id="saturationSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Vivid</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmSaturationBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardSaturationBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Vibrance Instrument Slider Panel -->
+            <div class="slider-group" id="vibranceSliderControl" style="display: none;">
+                <label for="vibranceSlider">Vibrance</label>
+                <div class="slider-control">
+                    <span class="dark-label">Mute</span>
+                    <input type="range" id="vibranceSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Vivid</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmVibranceBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardVibranceBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clarity Instrument Slider Panel -->
+            <div class="slider-group" id="claritySliderControl" style="display: none;">
+                <label for="claritySlider">Clarity</label>
+                <div class="slider-control">
+                    <span class="dark-label">Soft</span>
+                    <input type="range" id="claritySlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Detail</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmClarityBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardClarityBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Vignette Instrument Slider Panel -->
+            <div class="slider-group" id="vignetteSliderControl" style="display: none;">
+                <label for="vignetteSlider">Vignette</label>
+                <div class="slider-control">
+                    <span class="dark-label">Dark</span>
+                    <input type="range" id="vignetteSlider" min="-100" max="100" step="1" value="0">
+                    <span class="bright-label">Light</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmVignetteBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardVignetteBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sharpen Instrument Slider Panel -->
+            <div class="slider-group" id="sharpenSliderControl" style="display: none;">
+                <label for="sharpenSlider">Sharpen</label>
+                <div class="slider-control">
+                    <span class="dark-label">Soft</span>
+                    <input type="range" id="sharpenSlider" min="0" max="100" step="1" value="0">
+                    <span class="bright-label">Crisp</span>
+                </div>
+                <div class="tool-actions" style="margin-top: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="confirmSharpenBtn" style="background: #00adb5; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-check"></i> Confirm
+                    </button>
+                    <button type="button" id="discardSharpenBtn" style="background: #333; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">
+                        <i class="fa fa-times"></i> Discard
+                    </button>
+                </div>
+            </div>
+        </div> 
+<!------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+                                   Adjust tool end                       
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------->
+       
+
+<!------------------------------------------------------------------------------------------------------->
+
+
+
+
+
+              <!------------------------Tool Bar------------------------>
+
+
+
+
+
+<!------------------------------------------------------------------------------------------------------->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!----------------------------------------Tool UI data------------------------------------------------------------->
+                                   
+
+
+
+
+
+
+
+
+                                    <!----------CROP---------->
+
+
+
+
+
+
+
+<div id="cropModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; flex-direction: column;">
+    <div style="background: #1a1a1a; padding: 20px; border-radius: 8px; text-align: center; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; gap: 15px;">
+        <h3 style="color: white; margin: 0; font-family: sans-serif;">Crop Image</h3>
+        
+        <div style="overflow: auto; max-height: 60vh; background: #0a0a0a; border-radius: 4px;">
+            <canvas id="modalCropCanvas"></canvas>
+        </div>
+        
+        <div style="display: flex; justify-content: center; gap: 15px;">
+            <button id="cancelCropBtn" style="padding: 10px 20px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
+            <button id="confirmCropBtn" style="padding: 10px 20px; background: #0076ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Confirm Crop</button>
+        </div>
+    </div>
+</div>
+
+             
+
+
+
+
+
+                            <!----------TRANSFORM------------->
+
+
+
+
+<div id="transformPanel" class="transform-panel" style="display: none;">
+    
+    <div id="transformGallery" class="transform-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 12px 8px; -webkit-overflow-scrolling: touch;">
+        
+        <button type="button" data-target="resizeInputControl" class="gallery-item-btn" id="resizeToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-expand"></i>
+            <span>Resize</span>
+        </button>
+        
+        <button type="button" data-target="rotateInputControl" class="gallery-item-btn" id="rotateToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-refresh"></i>
+            <span>Rotate</span>
+        </button>
+    </div>
+    
+    <div class="numeric-input-group" id="resizeInputControl" style="display: none; padding: 10px; background: #1a1a1a; border-radius: 6px;">
+        <label style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px;">Dimensions</label>
+        <div class="input-control" style="display: flex; gap: 15px; align-items: center;">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="color: #888; font-size: 11px;">Width (px)</span>
+                <input type="number" id="transformWidthInput" min="1" step="1" value="1920" style="background: #333; color: white; border: 1px solid #444; padding: 6px; border-radius: 4px; width: 90px;">
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="color: #888; font-size: 11px;">Height (px)</span>
+                <input type="number" id="transformHeightInput" min="1" step="1" value="1080" style="background: #333; color: white; border: 1px solid #444; padding: 6px; border-radius: 4px; width: 90px;">
+            </div>
+        </div>
+        <div class="tool-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+            <button type="button" id="confirmResizeBtn" style="background: #00adb5; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px; font-weight: bold;">
+                <i class="fa fa-check"></i> Confirm
+            </button>
+            <button type="button" id="discardResizeBtn" style="background: #333; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px;">
+                <i class="fa fa-times"></i> Discard
+            </button>
+        </div>
+    </div>
+    
+    <div class="numeric-input-group" id="rotateInputControl" style="display: none; padding: 10px; background: #1a1a1a; border-radius: 6px;">
+        <label style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px;">Rotation Angle</label>
+        <div class="input-control" style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="color: #888; font-size: 11px;">Degrees (°)</span>
+            <input type="number" id="transformRotateInput" min="-360" max="360" step="1" value="0" style="background: #333; color: white; border: 1px solid #444; padding: 6px; border-radius: 4px; width: 90px;">
+        </div>
+        <div class="tool-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+            <button type="button" id="confirmRotateBtn" style="background: #00adb5; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px; font-weight: bold;">
+                <i class="fa fa-check"></i> Confirm
+            </button>
+            <button type="button" id="discardRotateBtn" style="background: #333; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px;">
+                <i class="fa fa-times"></i> Discard
+            </button>
+        </div>
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+                        <!------------------Filters------------------->
+
+
+
+
+
+
+
+
+<div class="tool-sidebar-action" style="padding: 10px 15px;">
+    <button type="button" id="filtersBtn" style="background: #222; color: #00adb5; border: 1px solid #00adb5; padding: 10px 16px; cursor: pointer; border-radius: 6px; font-weight: bold; font-family: sans-serif; display: flex; align-items: center; gap: 8px; width: 100%; justify-content: center; transition: all 0.2s ease;">
+        <i class="fa fa-sliders"></i> Filters Menu
+    </button>
+</div>
+
+<div id="filterPanel" class="filter-panel" style="display: none; background: #111; border-top: 1px solid #222; margin-top: 5px;">
+    
+    <div id="filterGallery" class="filter-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 12px 8px; -webkit-overflow-scrolling: touch;">
+        
+        <button type="button" data-filter="none" class="filter-item-btn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer;">
+            <div class="filter-preview-box" style="width: 60px; height: 60px; border-radius: 8px; background: #333; margin-bottom: 6px; border: 2px solid #00adb5; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px;">Orig</div>
+            <span style="color: white; font-family: sans-serif; font-size: 12px;">Original</span>
+        </button>
+
+        <button type="button" data-filter="vivid" class="filter-item-btn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer;">
+            <div class="filter-preview-box" style="width: 60px; height: 60px; border-radius: 8px; background: linear-gradient(45deg, #ff416c, #ff4b2b); margin-bottom: 6px; filter: saturate(1.8);"></div>
+            <span style="color: white; font-family: sans-serif; font-size: 12px;">Vivid</span>
+        </button>
+
+        <button type="button" data-filter="sepia" class="filter-item-btn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer;">
+            <div class="filter-preview-box" style="width: 60px; height: 60px; border-radius: 8px; background: #8e9eab; margin-bottom: 6px; filter: sepia(0.85) contrast(1.1);"></div>
+            <span style="color: white; font-family: sans-serif; font-size: 12px;">Sepia</span>
+        </button>
+
+        <button type="button" data-filter="mono" class="filter-item-btn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer;">
+            <div class="filter-preview-box" style="width: 60px; height: 60px; border-radius: 8px; background: linear-gradient(to right, #eef2f3, #8e9eab); margin-bottom: 6px; filter: grayscale(100%);"></div>
+            <span style="color: white; font-family: sans-serif; font-size: 12px;">Monochrome</span>
+        </button>
+
+        <button type="button" data-filter="cinematic" class="filter-item-btn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer;">
+            <div class="filter-preview-box" style="width: 60px; height: 60px; border-radius: 8px; background: #2c3e50; margin-bottom: 6px; filter: hue-rotate(30deg) saturate(1.3) contrast(1.15);"></div>
+            <span style="color: white; font-family: sans-serif; font-size: 12px;">Cinematic</span>
+        </button>
+
+        <button type="button" data-filter="cyberpunk" class="filter-item-btn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer;">
+            <div class="filter-preview-box" style="width: 60px; height: 60px; border-radius: 8px; background: linear-gradient(135deg, #00f2fe, #4facfe); margin-bottom: 6px; filter: hue-rotate(-50deg) saturate(1.9) contrast(1.2);"></div>
+            <span style="color: white; font-family: sans-serif; font-size: 12px;">Cyberpunk</span>
+        </button>
+
+        <button type="button" data-filter="invert" class="filter-item-btn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer;">
+            <div class="filter-preview-box" style="width: 60px; height: 60px; border-radius: 8px; background: linear-gradient(to top, #f12711, #f5af19); margin-bottom: 6px; filter: invert(1);"></div>
+            <span style="color: white; font-family: sans-serif; font-size: 12px;">Invert</span>
+        </button>
+    </div>
+
+    <div class="slider-group" id="filterIntensityControl" style="display: none; padding: 15px; background: #1a1a1a; border-radius: 6px; margin: 10px;">
+        <label id="activeFilterLabel" style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px; font-size: 14px; letter-spacing: 0.5px;">Filter Intensity</label>
+        <div class="slider-control" style="display: flex; align-items: center; gap: 10px;">
+            <span class="dark-label" style="color: #888; font-family: sans-serif; font-size: 12px;">0%</span>
+            <input type="range" id="filterIntensitySlider" min="0" max="100" step="1" value="100" style="flex: 1; cursor: pointer;">
+            <span class="bright-label" style="color: #888; font-family: sans-serif; font-size: 12px;">100%</span>
+        </div>
+        
+        <div class="tool-actions" style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="button" id="discardFilterBtn" style="background: #333; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px; font-family: sans-serif; font-size: 13px;">
+                <i class="fa fa-times"></i> Discard
+            </button>
+            <button type="button" id="confirmFilterBtn" style="background: #00adb5; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: bold; display: flex; align-items: center; gap: 6px; font-family: sans-serif; font-size: 13px;">
+                <i class="fa fa-check"></i> Confirm
+            </button>
+        </div>
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    <!---------------------------Details--------------------------->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    <div id="detailsPanel" class="details-panel" style="display: none; position: fixed; bottom: 80px; right: 20px; width: 320px; max-height: calc(100vh - 120px); background: #1a1a1a; border: 1px solid #333; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); font-family: sans-serif; color: #e0e0e0; overflow-y: auto; z-index: 900; padding: 16px;">
+    
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
+        <h4 style="margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #00adb5;"><i class="fa fa-eye"></i> Detail Enhancer</h4>
+        <span style="font-size: 11px; color: #888;">100% Zoom Window</span>
+    </div>
+
+    <div class="detail-preview-container" style="width: 100%; height: 160px; background: #0a0a0a; border: 1px solid #444; border-radius: 4px; overflow: hidden; margin-bottom: 16px; position: relative;">
+        <canvas id="detailsPreviewCanvas" style="width: 100%; height: 100%; object-fit: cover;"></canvas>
+        <div style="position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,0.6); padding: 2px 6px; border-radius: 3px; font-size: 10px; color: #aaa;">
+            Micro-texture Preview
+        </div>
+    </div>
+
+    <div class="details-section" style="margin-bottom: 20px;">
+        <div class="section-title" style="font-size: 12px; font-weight: bold; color: #fff; margin-bottom: 10px; border-left: 3px solid #00adb5; padding-left: 6px; text-transform: uppercase;">Sharpening</div>
+        
+        <div class="detail-slider-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Amount</span>
+                <span id="sharpenAmountVal" style="color: #00adb5;">0</span>
+            </div>
+            <input type="range" id="detailSharpenAmount" min="0" max="150" value="0" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <div class="detail-slider-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Radius</span>
+                <span id="sharpenRadiusVal" style="color: #aaa;">1.0 px</span>
+            </div>
+            <input type="range" id="detailSharpenRadius" min="0.5" max="3.0" step="0.1" value="1.0" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <div class="detail-slider-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Detail Threshold</span>
+                <span id="sharpenDetailVal" style="color: #aaa;">25</span>
+            </div>
+            <input type="range" id="detailSharpenDetail" min="0" max="100" value="25" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <div class="detail-slider-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Masking (Edge Isolation)</span>
+                <span id="sharpenMaskingVal" style="color: #aaa;">0</span>
+            </div>
+            <input type="range" id="detailSharpenMasking" min="0" max="100" value="0" style="width: 100%; cursor: pointer;">
+        </div>
+    </div>
+
+    <div class="details-section" style="margin-bottom: 20px; border-top: 1px solid #2d2d2d; padding-top: 14px;">
+        <div class="section-title" style="font-size: 12px; font-weight: bold; color: #fff; margin-bottom: 10px; border-left: 3px solid #ff9f43; padding-left: 6px; text-transform: uppercase;">Noise Reduction</div>
+        
+        <div class="detail-slider-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Luminance (Grain Smooth)</span>
+                <span id="denoiseLuminanceVal" style="color: #ff9f43;">0</span>
+            </div>
+            <input type="range" id="detailDenoiseLuminance" min="0" max="100" value="0" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <div class="detail-slider-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Luminance Detail</span>
+                <span id="denoiseLumDetailVal" style="color: #aaa;">50</span>
+            </div>
+            <input type="range" id="detailDenoiseLumDetail" min="0" max="100" value="50" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <div class="detail-slider-row" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Color Denoise (Artifacts)</span>
+                <span id="denoiseColorVal" style="color: #ff9f43;">0</span>
+            </div>
+            <input type="range" id="detailDenoiseColor" min="0" max="100" value="0" style="width: 100%; cursor: pointer;">
+        </div>
+    </div>
+
+    <div class="panel-actions" style="display: flex; gap: 10px; margin-top: 16px; border-top: 1px solid #2d2d2d; padding-top: 14px;">
+        <button type="button" id="confirmDetailsBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 13px;">
+            <i class="fa fa-check"></i> Apply
+        </button>
+        <button type="button" id="discardDetailsBtn" style="flex: 1; background: #333; color: #ccc; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px;">
+            <i class="fa fa-times"></i> Discard
+        </button>
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+                               <!------------BLUR-------------->
+
+
+
+
+
+                               <div id="blurPanel" class="blur-panel" style="display: none;">
+    <div id="blurGallery" class="blur-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 12px 8px; -webkit-overflow-scrolling: touch;">
+        
+        <button type="button" data-target="gaussianSliderControl" class="gallery-item-btn" id="gaussianBlurToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 85px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-snowflake-o"></i>
+            <span>Gaussian</span>
+        </button>
+
+        <button type="button" data-target="radialSliderControl" class="gallery-item-btn" id="radialBlurToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 85px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-dot-circle-o"></i>
+            <span>Radial Depth</span>
+        </button>
+    </div>
+    
+    <div class="slider-group" id="gaussianSliderControl" style="display: none; padding: 10px; background: #1a1a1a; border-radius: 6px;">
+        <label for="gaussianSlider" style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px;">Gaussian Blur Radius</label>
+        <div class="slider-control" style="display: flex; align-items: center; gap: 10px;">
+            <span class="dark-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Sharp</span>
+            <input type="range" id="gaussianSlider" min="0" max="50" step="0.5" value="0" style="flex: 1; cursor: pointer;">
+            <span class="bright-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Defocused</span>
+        </div>
+        <div class="tool-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+            <button type="button" id="confirmGaussianBlurBtn" style="background: #00adb5; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px; font-weight: bold;">
+                <i class="fa fa-check"></i> Confirm
+            </button>
+            <button type="button" id="discardGaussianBlurBtn" style="background: #333; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px;">
+                <i class="fa fa-times"></i> Discard
+            </button>
+        </div>
+    </div>
+    
+    <div class="slider-group" id="radialSliderControl" style="display: none; padding: 10px; background: #1a1a1a; border-radius: 6px;">
+        <label for="radialSlider" style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px;">Radial Blur Amount</label>
+        <div class="slider-control" style="display: flex; align-items: center; gap: 10px;">
+            <span class="dark-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Center Clear</span>
+            <input type="range" id="radialSlider" min="0" max="100" step="1" value="0" style="flex: 1; cursor: pointer;">
+            <span class="bright-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Spin/Zoom</span>
+        </div>
+        <div class="tool-actions" style="margin-top: 15px; display: flex; gap: 10px;">
+            <button type="button" id="confirmRadialBlurBtn" style="background: #00adb5; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px; font-weight: bold;">
+                <i class="fa fa-check"></i> Confirm
+            </button>
+            <button type="button" id="discardRadialBlurBtn" style="background: #333; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px;">
+                <i class="fa fa-times"></i> Discard
+            </button>
+        </div>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+                                <!-------------CURVES--------------->
+
+
+
+<div id="curvesPanel" class="curves-panel" style="display: none; position: fixed; bottom: 80px; right: 20px; width: 320px; max-height: calc(100vh - 120px); background: #1a1a1a; border: 1px solid #333; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); font-family: sans-serif; color: #e0e0e0; overflow-y: auto; z-index: 900; padding: 16px;">
+    
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
+        <h4 style="margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #00adb5;"><i class="fa fa-line-chart"></i> Tone Curves</h4>
+        <span style="font-size: 11px; color: #888;">RGB & Color Channels</span>
+    </div>
+
+    <div class="curves-channel-container" style="display: flex; background: #0a0a0a; padding: 4px; border-radius: 6px; gap: 4px; margin-bottom: 16px; border: 1px solid #2d2d2d;">
+        <button type="button" class="curve-channel-btn active" data-channel="rgb" style="flex: 1; background: #2d2d2d; border: none; color: #fff; font-size: 11px; font-weight: bold; padding: 6px 0; border-radius: 4px; cursor: pointer; text-transform: uppercase;">RGB</button>
+        <button type="button" class="curve-channel-btn" data-channel="red" style="flex: 1; background: none; border: none; color: #888; font-size: 11px; font-weight: bold; padding: 6px 0; border-radius: 4px; cursor: pointer; text-transform: uppercase;">Red</button>
+        <button type="button" class="curve-channel-btn" data-channel="green" style="flex: 1; background: none; border: none; color: #888; font-size: 11px; font-weight: bold; padding: 6px 0; border-radius: 4px; cursor: pointer; text-transform: uppercase;">Green</button>
+        <button type="button" class="curve-channel-btn" data-channel="blue" style="flex: 1; background: none; border: none; color: #888; font-size: 11px; font-weight: bold; padding: 6px 0; border-radius: 4px; cursor: pointer; text-transform: uppercase;">Blue</button>
+    </div>
+
+    <div class="curves-workspace-container" style="width: 100%; display: flex; justify-content: center; margin-bottom: 16px;">
+        <div class="curves-interactive-canvas-wrapper" style="width: 256px; height: 256px; background: #0a0a0a; border: 1px solid #444; border-radius: 4px; position: relative; overflow: visible;">
+            
+            <canvas id="curvesGridCanvas" width="256" height="256" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+
+            <svg id="curvesInteractiveSvg" viewBox="0 0 256 256" width="256" height="256" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; cursor: crosshair; z-index: 5;">
+                <defs>
+                    <filter id="nodeGlow" x="-30%" y="-30%" width="160%" height="160%">
+                        <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.6"/>
+                    </filter>
+                </defs>
+                
+                <path id="curveSplinePath" d="M 0 256 L 256 0" fill="none" stroke="#00adb5" stroke-width="2.5" stroke-linecap="round"/>
+                
+                <g id="curvesPointsGroup"></g>
+            </svg>
+        </div>
+    </div>
+
+    <div class="curves-coordinates-readout" style="display: flex; justify-content: space-between; background: #0a0a0a; border: 1px solid #2d2d2d; border-radius: 4px; padding: 8px 12px; font-size: 12px; font-family: monospace; margin-bottom: 16px; color: #aaa;">
+        <div>Input: <span id="curveInputVal" style="color: #00adb5; font-weight: bold;">---</span></div>
+        <div>Output: <span id="curveOutputVal" style="color: #00adb5; font-weight: bold;">---</span></div>
+    </div>
+
+    <div class="panel-actions" style="display: flex; gap: 10px; border-top: 1px solid #2d2d2d; padding-top: 14px;">
+        <button type="button" id="confirmCurvesBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 13px;">
+            <i class="fa fa-check"></i> Apply
+        </button>
+        <button type="button" id="curvesResetBtn" style="padding: 8px 12px; background: #2a2a2a; color: #bbb; border: 1px solid #333; border-radius: 4px; font-size: 13px; cursor: pointer;" title="Reset current line channel parameters">
+            <i class="fa fa-refresh"></i>
+        </button>
+        <button type="button" id="discardCurvesBtn" style="flex: 1; background: #333; color: #ccc; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px;">
+            <i class="fa fa-times"></i> Discard
+        </button>
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+                         <!--------------Mixer------------------->
+<div id="mixerToolBar" class="adjust-panel" style="display: none;">
+    
+    <div id="mixerGallery" class="adjust-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 12px 8px; -webkit-overflow-scrolling: touch;">
+        
+        <button type="button" data-mixer-target="mixerSizeControl" class="gallery-item-btn mixer-gallery-btn active" id="toolMixerSizeBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-paint-brush"></i>
+            <span>Brush Size</span>
+        </button>
+
+        <button type="button" data-mixer-target="mixerWetControl" class="gallery-item-btn mixer-gallery-btn" id="toolMixerWetBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-tint"></i>
+            <span>Wetness</span>
+        </button>
+
+        <button type="button" data-mixer-target="mixerLoadControl" class="gallery-item-btn mixer-gallery-btn" id="toolMixerLoadBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-download"></i>
+            <span>Paint Load</span>
+        </button>
+
+        <button type="button" data-mixer-target="mixerMixControl" class="gallery-item-btn mixer-gallery-btn" id="toolMixerMixBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer;">
+            <i class="fa fa-refresh"></i>
+            <span>Mix Ratio</span>
+        </button>
+    </div>
+    
+    <div class="slider-group mixer-slider-group" id="mixerSizeControl" style="display: block;">
+        <label for="mixerSize">Brush Size (<span id="mixerSizeVal">30 px</span>)</label>
+        <div class="slider-control">
+            <input type="range" id="mixerSize" min="1" max="200" value="30">
+        </div>
+    </div>
+    
+    <div class="slider-group mixer-slider-group" id="mixerWetControl" style="display: none;">
+        <label for="mixerWet">Wetness (<span id="mixerWetVal">50%</span>)</label>
+        <div class="slider-control">
+            <input type="range" id="mixerWet" min="0" max="100" value="50">
+        </div>
+    </div>
+
+    <div class="slider-group mixer-slider-group" id="mixerLoadControl" style="display: none;">
+        <label for="mixerLoad">Paint Load (<span id="mixerLoadVal">50%</span>)</label>
+        <div class="slider-control">
+            <input type="range" id="mixerLoad" min="0" max="100" value="50">
+        </div>
+    </div>
+
+    <div class="slider-group mixer-slider-group" id="mixerMixControl" style="display: none;">
+        <label for="mixerMix">Mix Ratio (<span id="mixerMixVal">50%</span>)</label>
+        <div class="slider-control">
+            <input type="range" id="mixerMix" min="0" max="100" value="50">
+        </div>
+    </div>
+
+    <div class="tool-actions" style="margin-top: 15px; padding: 0 10px; display: flex; gap: 12px; justify-content: flex-end;">
+        <button type="button" id="btnMixerDiscard" style="background: #333; color: #ff4a4a; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: 500;">
+            <i class="fa fa-times"></i> Discard
+        </button>
+        <button type="button" id="btnMixerConfirm" style="background: #00adb5; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: 500;">
+            <i class="fa fa-check"></i> Confirm
+        </button>
+    </div>
+</div>
+
+
+
+                              <!----------Color Grading----------->
+
+
+
+
+
+
+<div id="gradingPanel" class="grading-panel" style="display: none; background: #1a1a1a; padding: 15px; border-radius: 6px; font-family: sans-serif; color: white; width: 320px;">
+    <h4 style="margin-top: 0; color: #00adb5; display: flex; align-items: center; gap: 8px;">
+        <i class="fa fa-sliders"></i> Color Grading
+    </h4>
+
+    <div class="grading-tabs" style="display: flex; background: #111; padding: 3px; border-radius: 4px; margin-bottom: 15px;">
+        <button type="button" class="grading-tab-btn active" data-zone="shadows" style="flex: 1; padding: 6px; background: #00adb5; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold;">Shadows</button>
+        <button type="button" class="grading-tab-btn" data-zone="midtones" style="flex: 1; padding: 6px; background: transparent; color: #aaa; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">Midtones</button>
+        <button type="button" class="grading-tab-btn" data-zone="highlights" style="flex: 1; padding: 6px; background: transparent; color: #aaa; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">Highlights</button>
+    </div>
+
+    <div id="gradingSlidersContainer" style="margin-bottom: 15px;">
+        <div class="slider-group" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                <label>Hue (Color)</label>
+                <span id="gradingHueVal" style="color: #00adb5;">0°</span>
+            </div>
+            <input type="range" id="gradingHue" min="0" max="360" value="0" style="width: 100%; accent-color: #00adb5; background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%); height: 8px; border-radius: 4px; appearance: none; outline: none;">
+        </div>
+
+        <div class="slider-group" style="margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+                <label>Saturation (Intensity)</label>
+                <span id="gradingSatVal" style="color: #00adb5;">0%</span>
+            </div>
+            <input type="range" id="gradingSat" min="0" max="100" value="0" style="width: 100%; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #2d2d2d; margin: 15px 0;">
+
+    <div class="global-grading-controls" style="margin-bottom: 20px;">
+        <div class="slider-group" style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #aaa;">
+                <label for="gradingBalance">Balance</label>
+                <span id="gradingBalanceVal">0</span>
+            </div>
+            <input type="range" id="gradingBalance" min="-100" max="100" value="0" style="width: 100%; accent-color: #00adb5;">
+        </div>
+
+        <div class="slider-group">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #aaa;">
+                <label for="gradingBlending">Blending</label>
+                <span id="gradingBlendingVal">50%</span>
+            </div>
+            <input type="range" id="gradingBlending" min="0" max="100" value="50" style="width: 100%; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <div class="tool-actions" style="display: flex; gap: 10px;">
+        <button type="button" id="confirmGradingBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 8px; cursor: pointer; border-radius: 4px; font-weight: bold;">
+            <i class="fa fa-check"></i> Apply
+        </button>
+        <button type="button" id="discardGradingBtn" style="flex: 1; background: #333; color: white; border: none; padding: 8px; cursor: pointer; border-radius: 4px;">
+            <i class="fa fa-times"></i> Cancel
+        </button>
+    </div>
+</div>
+
+
+
+           
+
+
+
+
+
+
+
+
+                           <!------------Layers------------>
+
+
+
+
+
+
+
+
+<div id="layersPanel" class="layers-panel" style="display: none; position: absolute; right: 20px; top: 20px; width: 280px; background: #1a1a1a; border: 1px solid #2d2d2d; border-radius: 6px; font-family: sans-serif; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100;">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #2d2d2d;">
+        <h4 style="margin: 0; color: #00adb5; font-size: 14px;"><i class="fa fa-clone"></i> Layers Stack</h4>
+        <i id="closeLayersBtn" class="fa fa-times" style="cursor: pointer; color: #888;"></i>
+    </div>
+
+    <div style="padding: 12px; border-bottom: 1px solid #2d2d2d; background: #151515;">
+        <div class="slider-group" style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; color: #aaa;">
+                <label for="layerOpacity">Layer Opacity</label>
+                <span id="layerOpacityVal" style="color: #00adb5;">100%</span>
+            </div>
+            <input type="range" id="layerOpacity" min="0" max="100" value="100" style="width: 100%; accent-color: #00adb5;">
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+            <button type="button" id="addNewLayerBtn" title="Add New Layer" style="flex: 1; padding: 6px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <i class="fa fa-plus" style="color: #00adb5;"></i> Add
+            </button>
+            <button type="button" id="deleteLayerBtn" title="Delete Active Layer" style="flex: 1; padding: 6px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <i class="fa fa-trash" style="color: #ff4a4a;"></i> Delete
+            </button>
+            <button type="button" id="moveLayerUpBtn" title="Move Layer Up" style="padding: 6px 10px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer;"><i class="fa fa-arrow-up"></i></button>
+            <button type="button" id="moveLayerDownBtn" title="Move Layer Down" style="padding: 6px 10px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer;"><i class="fa fa-arrow-down"></i></button>
+        </div>
+    </div>
+
+    <div id="layersListContainer" style="max-height: 240px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+        
+        <div class="layer-item active" data-layer-id="2" style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #252525; border: 1px solid #00adb5; border-radius: 4px; cursor: pointer;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button type="button" class="layer-visibility-toggle" style="background: none; border: none; color: #00adb5; cursor: pointer; padding: 0;"><i class="fa fa-eye"></i></button>
+                <div class="layer-thumbnail" style="width: 32px; height: 32px; background: #111; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #00adb5; font-size: 12px;">T</div>
+                <span class="layer-name" style="font-size: 12px; font-weight: bold; color: #fff;">Watermark Text</span>
+            </div>
+            <i class="fa fa-bars" style="color: #444; font-size: 12px;"></i>
+        </div>
+
+        <div class="layer-item" data-layer-id="1" style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 4px; cursor: pointer;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button type="button" class="layer-visibility-toggle" style="background: none; border: none; color: #888; cursor: pointer; padding: 0;"><i class="fa fa-eye"></i></button>
+                <div class="layer-thumbnail" style="width: 32px; height: 32px; background: #333; border-radius: 3px; background-image: linear-gradient(45deg, #111 25%, transparent 25%), linear-gradient(-45deg, #111 25%, transparent 25%); background-size: 8px 8px;"></div>
+                <span class="layer-name" style="font-size: 12px; color: #aaa;">Background.jpg</span>
+            </div>
+            <i class="fa fa-lock" style="color: #555; font-size: 12px; margin-right: 2px;"></i>
+        </div>
+
+    </div>
+</div>
+
+
+
+
+
+                              <!---------Selection------------->
+                                  
+
+
+
+
+
+
+
+<div id="selectionPanel" class="adjust-panel" style="display: none; position: absolute; top: 80px; left: 20px; z-index: 100; width: 280px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+    
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
+        <h3 style="margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; color: #00adb5;">SELECTION TOOL</h3>
+        <button type="button" id="clearSelectionBtn" style="background: transparent; border: none; color: #ff5e5e; cursor: pointer; font-size: 11px; font-weight: bold;">CLEAR</button>
+    </div>
+
+    <div class="selection-modes" style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <button type="button" class="selection-mode-btn active" data-mode="rect" style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-square-o" style="font-size: 16px;"></i>
+            <span style="font-size: 10px;">Rectangle</span>
+        </button>
+        <button type="button" class="selection-mode-btn" data-mode="ellipse" style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-circle-o" style="font-size: 16px;"></i>
+            <span style="font-size: 10px;">Ellipse</span>
+        </button>
+        <button type="button" class="selection-mode-btn" data-mode="lasso" style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-pencil" style="font-size: 16px;"></i>
+            <span style="font-size: 10px;">Lasso</span>
+        </button>
+    </div>
+
+    <div class="control-group" style="margin-top: 12px;">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #ccc; margin-bottom: 6px;">
+            <label for="selectionFeather">Feather Selection Edge</label>
+            <span id="selectionFeatherVal">0px</span>
+        </div>
+        <input type="range" id="selectionFeather" min="0" max="50" value="0" step="1" style="width: 100%; accent-color: #00adb5; background: #333; height: 4px; border-radius: 2px; cursor: pointer;">
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+                        <!--------Masking------->
+
+
+
+
+
+
+
+
+
+<div id="maskingPanel" class="masking-panel" style="display: none; position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); width: 90vw; max-width: 500px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); font-family: sans-serif; color: #e0e0e0; z-index: 900; padding: 16px; flex-direction: column; gap: 14px;">
+    
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
+        <h4 style="margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #00adb5;">
+            <i class="fa fa-paint-brush"></i> Masking Studio
+        </h4>
+        <button type="button" id="invertMaskGlobalBtn" style="background: #333; color: white; border: 1px solid #444; padding: 4px 10px; font-size: 11px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 4px;">
+            <i class="fa fa-exchange"></i> Invert Mask
+        </button>
+    </div>
+
+    <div id="maskingGallery" class="masking-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 4px 0px 8px 0px; -webkit-overflow-scrolling: touch;">
+        
+        <button type="button" data-target="brushMaskControls" class="gallery-item-btn active-mask-btn" id="brushMaskBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer; color: white;">
+            <i class="fa fa-paint-brush" style="font-size: 18px; margin-bottom: 6px; color: #00adb5;"></i>
+            <span style="font-size: 12px;">Brush</span>
+        </button>
+
+        <button type="button" data-target="gradientMaskControls" class="gallery-item-btn" id="linearMaskBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-columns" style="font-size: 18px; margin-bottom: 6px; transform: rotate(90deg);"></i>
+            <span style="font-size: 12px;">Linear</span>
+        </button>
+
+        <button type="button" data-target="gradientMaskControls" class="gallery-item-btn" id="radialMaskBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-dot-circle-o" style="font-size: 18px; margin-bottom: 6px;"></i>
+            <span style="font-size: 12px;">Radial</span>
+        </button>
+
+        <button type="button" data-target="autoMaskControls" class="gallery-item-btn" id="autoMaskBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 75px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-magic" style="font-size: 18px; margin-bottom: 6px;"></i>
+            <span style="font-size: 12px;">Auto Select</span>
+        </button>
+    </div>
+
+    <div class="mask-control-group" id="brushMaskControls" style="display: block; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="display: flex; gap: 10px; margin-bottom: 12px; justify-content: center;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: #fff;">
+                <input type="radio" name="brushMode" value="add" checked style="accent-color: #00adb5;"> <i class="fa fa-plus-circle" style="color:#00adb5;"></i> Add (White)
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: #ccc;">
+                <input type="radio" name="brushMode" value="subtract" style="accent-color: #00adb5;"> <i class="fa fa-minus-circle" style="color:#ff416c;"></i> Erase (Black)
+            </label>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Brush Size</span>
+                <span id="brushSizeVal" style="color: #00adb5;">40 px</span>
+            </div>
+            <input type="range" id="maskBrushSize" min="5" max="200" value="40" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+
+        <div style="margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Feather (Edge Softness)</span>
+                <span id="brushFeatherVal" style="color: #aaa;">50%</span>
+            </div>
+            <input type="range" id="maskBrushFeather" min="0" max="100" value="50" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <div class="mask-control-group" id="gradientMaskControls" style="display: none; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Gradient Falloff / Feather</span>
+                <span id="gradientFeatherVal" style="color: #00adb5;">100%</span>
+            </div>
+            <input type="range" id="maskGradientFeather" min="10" max="200" value="100" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+        <p style="margin: 6px 0 0 0; font-size: 11px; color: #888; text-align: center;">
+            <i class="fa fa-info-circle"></i> Drag on the canvas map directly to adjust direction and bounds.
+        </p>
+    </div>
+
+    <div class="mask-control-group" id="autoMaskControls" style="display: none; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px;">
+            <span>Tolerance Detection</span>
+            <span id="autoMaskToleranceVal" style="color: #aaa;">32</span>
+        </div>
+        <input type="range" id="maskTolerance" min="1" max="128" value="32" style="width: 100%; cursor: pointer; accent-color: #00adb5; margin-bottom: 8px;">
+        <button type="button" id="triggerAiSelectBtn" style="width: 100%; background: #222; border: 1px solid #444; color: #fff; padding: 6px; font-size: 12px; cursor: pointer; border-radius: 4px;">
+            <i class="fa fa-sparkles"></i> Convert Active Selection To Mask
+        </button>
+    </div>
+
+    <div class="mask-global-opacity" style="padding: 0 4px;">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+            <span>Mask Density (Global Opacity)</span>
+            <span id="maskOpacityVal" style="color: #aaa;">100%</span>
+        </div>
+        <input type="range" id="maskGlobalOpacity" min="0" max="100" value="100" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+    </div>
+
+    <div class="panel-actions" style="display: flex; gap: 10px; margin-top: 4px; border-top: 1px solid #2d2d2d; padding-top: 12px;">
+        <button type="button" id="confirmMaskBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fa fa-check"></i> Apply Mask
+        </button>
+        <button type="button" id="discardMaskBtn" style="flex: 1; background: #333; color: #ccc; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fa fa-times"></i> Discard
+        </button>
+    </div>
+</div>
+
+
+
+
+  
+
+                                <!--------Retouch-------->
+
+
+
+
+
+<div id="retouchPanel" class="retouch-panel" style="display: none; position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); width: 90vw; max-width: 500px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); font-family: sans-serif; color: #e0e0e0; z-index: 900; padding: 16px; flex-direction: column; gap: 14px;">
+    
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
+        <h4 style="margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #00adb5;">
+            <i class="fa fa-magic"></i> Retouch Studio
+        </h4>
+        <span id="retouchModeLabel" style="font-size: 11px; background: #2a2a2a; color: #00adb5; padding: 2px 8px; border-radius: 12px; border: 1px solid #333;">Spot Heal</span>
+    </div>
+
+    <div id="retouchGallery" class="retouch-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 4px 0px 8px 0px; -webkit-overflow-scrolling: touch;">
+        
+        <button type="button" data-target="standardRetouchControls" class="gallery-item-btn active-retouch-btn" id="spotHealBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer; color: white;">
+            <i class="fa fa-medkit" style="font-size: 18px; margin-bottom: 6px; color: #00adb5;"></i>
+            <span style="font-size: 12px;">Spot Heal</span>
+        </button>
+
+        <button type="button" data-target="sourceRetouchControls" class="gallery-item-btn" id="cloneStampBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-clone" style="font-size: 18px; margin-bottom: 6px;"></i>
+            <span style="font-size: 12px;">Clone Stamp</span>
+        </button>
+
+        <button type="button" data-target="sourceRetouchControls" class="gallery-item-btn" id="healingBrushBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-paint-brush" style="font-size: 18px; margin-bottom: 6px;"></i>
+            <span style="font-size: 12px;">Heal Brush</span>
+        </button>
+
+        <button type="button" data-target="smoothRetouchControls" class="gallery-item-btn" id="skinSmoothBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-smile-o" style="font-size: 18px; margin-bottom: 6px;"></i>
+            <span style="font-size: 12px;">Smooth Skin</span>
+        </button>
+    </div>
+
+    <div class="retouch-control-group" id="standardRetouchControls" style="display: block; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Brush Size</span>
+                <span id="retouchBrushSizeVal" style="color: #00adb5;">20 px</span>
+            </div>
+            <input type="range" id="retouchBrushSize" min="5" max="100" value="20" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+        <div style="margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Hardness</span>
+                <span id="retouchHardnessVal" style="color: #aaa;">20%</span>
+            </div>
+            <input type="range" id="retouchHardness" min="0" max="100" value="20" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <div class="retouch-control-group" id="sourceRetouchControls" style="display: none; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 12px; color: #ccc;">Sampling State:</span>
+            <button type="button" id="setSourceModeBtn" style="background: #222; border: 1px solid #444; color: #ff9f43; padding: 4px 10px; font-size: 11px; border-radius: 4px; cursor: pointer;">
+                <i class="fa fa-crosshairs"></i> Set Source Location
+            </button>
+        </div>
+        <div style="margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Stamp Opacity</span>
+                <span id="sourceOpacityVal" style="color: #00adb5;">100%</span>
+            </div>
+            <input type="range" id="retouchSourceOpacity" min="10" max="100" value="100" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <div class="retouch-control-group" id="smoothRetouchControls" style="display: none; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Smoothing Intensity</span>
+                <span id="smoothBlurVal" style="color: #00adb5;">50%</span>
+            </div>
+            <input type="range" id="retouchSmoothBlur" min="10" max="100" value="50" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <div class="panel-actions" style="display: flex; gap: 10px; margin-top: 4px; border-top: 1px solid #2d2d2d; padding-top: 12px;">
+        <button type="button" id="confirmRetouchBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fa fa-check"></i> Apply Fixes
+        </button>
+        <button type="button" id="discardRetouchBtn" style="flex: 1; background: #333; color: #ccc; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fa fa-times"></i> Discard
+        </button>
+    </div>
+</div>
+
+
+
+
+
+
+
+                           <!------------Wrap----------->
+
+
+
+
+
+<div id="warpPanel" class="warp-panel" style="display: none; position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); width: 90vw; max-width: 500px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); font-family: sans-serif; color: #e0e0e0; z-index: 900; padding: 16px; flex-direction: column; gap: 14px;">
+    
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
+        <h4 style="margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #00adb5;">
+            <i class="fa fa-th"></i> Warp Studio
+        </h4>
+        <span id="warpModeLabel" style="font-size: 11px; background: #2a2a2a; color: #00adb5; padding: 2px 8px; border-radius: 12px; border: 1px solid #333;">Mesh Grid</span>
+    </div>
+
+    <div id="warpGallery" class="warp-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 4px 0px 8px 0px; -webkit-overflow-scrolling: touch;">
+        
+        <button type="button" data-target="gridWarpControls" class="gallery-item-btn active-warp-btn" id="gridWarpBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer; color: white;">
+            <i class="fa fa-th" style="font-size: 18px; margin-bottom: 6px; color: #00adb5;"></i>
+            <span style="font-size: 12px;">Mesh Grid</span>
+        </button>
+
+        <button type="button" data-target="brushWarpControls" class="gallery-item-btn" id="pushWarpBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-hand-o-up" style="font-size: 18px; margin-bottom: 6px;"></i>
+            <span style="font-size: 12px;">Push Fluid</span>
+        </button>
+
+        <button type="button" data-target="brushWarpControls" class="gallery-item-btn" id="restoreWarpBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 80px; background: none; border: none; cursor: pointer; color: #aaa;">
+            <i class="fa fa-undo" style="font-size: 18px; margin-bottom: 6px;"></i>
+            <span style="font-size: 12px;">Restore</span>
+        </button>
+    </div>
+
+    <div class="warp-control-group" id="gridWarpControls" style="display: block; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Grid Density (Columns/Rows)</span>
+                <span id="warpGridDensityVal" style="color: #00adb5;">4 x 4</span>
+            </div>
+            <input type="range" id="warpGridDensity" min="2" max="10" value="4" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <div class="warp-control-group" id="brushWarpControls" style="display: none; background: #111; padding: 12px; border-radius: 6px;">
+        <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Brush Radius</span>
+                <span id="warpBrushSizeVal" style="color: #00adb5;">50 px</span>
+            </div>
+            <input type="range" id="warpBrushSize" min="10" max="150" value="50" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+        <div style="margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span>Pressure / Intensity</span>
+                <span id="warpPressureVal" style="color: #aaa;">30%</span>
+            </div>
+            <input type="range" id="warpPressure" min="5" max="100" value="30" style="width: 100%; cursor: pointer; accent-color: #00adb5;">
+        </div>
+    </div>
+
+    <div class="panel-actions" style="display: flex; gap: 10px; margin-top: 4px; border-top: 1px solid #2d2d2d; padding-top: 12px;">
+        <button type="button" id="confirmWarpBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fa fa-check"></i> Commit Warp
+        </button>
+        <button type="button" id="discardWarpBtn" style="flex: 1; background: #333; color: #ccc; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fa fa-times"></i> Discard
+        </button>
+    </div>
+</div>
+
+
+<!------------------------------------------------------------------------------------------------------>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- Master Industry-Grade Main Category Toolbar -->
+        <div id="toolbar" class="toolbar">
+            
+            <!-- =================================================================
+                 1. FRAME & COMPOSITION CATEGORIES (BASIC)
+                 ================================================================== -->
+            <button class="tool-btn" id="cropBtn" title="Crop, Aspect Ratio & Scale">
+                <i class="fa fa-crop"></i>
+                <span>Crop</span>
+            </button>
+            
+            <button class="tool-btn" id="transformBtn" title="Rotate, Flip & Perspective Distortion">
+                <i class="fa fa-arrows"></i>
+                <span>Transform</span>
+            </button>
+
+            <!-- =================================================================
+                 2. LIGHT & COLOR CONTROL CATEGORIES (STANDARD)
+                 ================================================================== -->
+            <button class="tool-btn" id="adjustBtn" title="Global Exposure, Contrast & Light">
+                <i class="fa fa-sliders"></i>
+                <span>Adjust</span>
+            </button>
+
+            <button class="tool-btn" id="filtersBtn" title="Presets, Looks & Global LUTs">
+                <i class="fa fa-filter"></i>
+                <span>Filters</span>
+            </button>
+
+            <!-- =================================================================
+                 3. TEXTURE, BLUR & GEOMETRIC EDGE ENHANCERS (STANDARD)
+                 ================================================================== -->
+            <button class="tool-btn" id="detailsBtn" title="Sharpen, Clarity, Vignette & Denoise">
+                <i class="fa fa-eye"></i>
+                <span>Details</span>
+            </button>
+            
+            <button class="tool-btn" id="blurBtn" title="Gaussian & Radial Depth Blurs">
+                <i class="fa fa-circle-thin"></i>
+                <span>Blur</span>
+            </button>
+
+            <!-- =================================================================
+                 4. HIGH-END MATHEMATICAL TONE MAPPING (ADVANCED)
+                 ================================================================== -->
+            <button class="tool-btn" id="curvesBtn" title="Parametric & RGB Bezier Tone Curves">
+                <i class="fa fa-line-chart"></i>
+                <span>Curves</span>
+            </button>
+
+            <button class="tool-btn" id="mixerBtn" title="8-Channel Color Mixer (Hue, Saturation, Luminance)">
+                <i class="fa fa-pie-chart"></i>
+                <span>Mixer</span>
+            </button>
+
+            <button class="tool-btn" id="gradingBtn" title="Three-Way Split Toning (Shadows, Midtones, Highlights)">
+                <i class="fa fa-circle-o-notch"></i>
+                <span>Grading</span>
+            </button>
+
+            <!-- =================================================================
+                 5. COMPOSITING, LAYERS & SELECTIONS (ADVANCED)
+                 ================================================================== -->
+            <button class="tool-btn" id="layersToggleBtn" title="Stacked Transparent Worksheets & Canvas Graphics">
+                <i class="fa fa-clone"></i>
+                <span>Layers</span>
+            </button>
+
+            <button class="tool-btn" id="selectionToolBtn" title="Lasso, Magic Wand & Color Range Mask Isolation">
+                <i class="fa fa-hand-pointer-o"></i>
+                <span>Selection</span>
+            </button>
+
+            <button class="tool-btn" id="maskingBtn" title="Localized Gradients & Painted Adjustment Masks">
+                <i class="fa fa-paint-brush"></i>
+                <span>Masking</span>
+            </button>
+
+            <!-- =================================================================
+                 6. REPAIR, DESTRUCTIVE EDITS & FREQUENCY CONTROL (ADVANCED)
+                 ================================================================== -->
+            <button class="tool-btn" id="retouchBtn" title="Clone Stamp, Healing Brush, Dodge & Burn">
+                <i class="fa fa-medkit"></i>
+                <span>Retouch</span>
+            </button>
+
+            <button class="tool-btn" id="warpBtn" title="Liquify Mesh Distortion & Pixel Warping">
+                <i class="fa fa-magic"></i>
+                <span>Warp</span>
+            </button>
+
+            <!-- =================================================================
+                 7. SEMANTIC INTELLIGENCE AUTOMATION (MODERN EXTENSION)
+                 ================================================================== -->
+            <button class="tool-btn" id="aiAutomationBtn" title="AI Subject Matting, Sky Isolation & Face Relighting">
+                <i class="fa fa-bolt"></i>
+                <span>AI Tools</span>
+            </button>
+        </div>
+
+        <!-----------All JavaScript Files-------------------->
+
+
+
+
+        <!---------------History Managers-------------------->
+
+        <script src="Tools/Adjust/interaction.js"></script>
+        <script src="scrolltoolbar.js"></script>
+
+        
+        <script src="Tools/Adjust/History/ParamiterHistoryManager_adjust.js"></script>
+        <script src="Tools/Adjust/History/BaseLineHistoryManager_adjust.js"></script>
+        <script src="history_manager.js"></script>
+        <script src="Tools/Crop/crop_history_connector.js"></script>
+
+
+
+        <!-------------------Adjust tool Files--------------->
+        <script src="Tools/Adjust/adjust_manager.js"></script>
+        <script src="Tools/Adjust/exposure.js"></script>
+        <script src="Tools/Adjust/brightness.js"></script>
+        <script src="Tools/Adjust/contrast.js"></script>
+        <script src="Tools/Adjust/highlights.js"></script>
+        <script src="Tools/Adjust/shadows.js"></script>
+        <script src="Tools/Adjust/temperature.js"></script>
+        <script src="Tools/Adjust/tint.js"></script>
+        <script src="Tools/Adjust/saturation.js"></script>
+        <script src="Tools/Adjust/vibrance.js"></script>
+        <script src="Tools/Adjust/clarity.js"></script>
+        <script src="Tools/Adjust/vignette.js"></script>
+        <script src="Tools/Adjust/sharpen.js"></script>
+
+        
+        <!--------------------Tools------------------------->
+        
+        <!----Crop----->
+        <script src="Tools/Crop/crop.js"></script>
+        <script src="Tools/Crop/crop_history_connector.js"></script>
+        <!------------->
+
+        <!--Transform-->
+        <script src="Tools/Transform/transform_manager.js"></script>
+        <script src="Tools/Transform/transform.js"></script>
+        <!------------->
+
+        <!----Filter--->
+        <script src="Tools/Filters/filter_manager.js"></script>
+        <script src="Tools/Filters/filter_engine.js"></script>
+        <script src="Tools/Filters/historymanager_filter.js"></script>
+        <script src="Tools/Filters/FILTERS/filter_vivid.js"></script>
+        <script src="Tools/Filters/FILTERS/filter_sepia.js"></script>
+        <script src="Tools/Filters/FILTERS/filter_mono.js"></script>
+        <script src="Tools/Filters/FILTERS/filter_invert.js"></script>
+        <script src="Tools/Filters/FILTERS/filter_cyberpunk.js"></script>
+        <script src="Tools/Filters/FILTERS/filter_cenematic.js"></script>
+        <!------------->
+        
+        <!---Details--->
+
+        <script src="Tools/Details/Operations/noise_colorr.js"></script>
+        <script src="Tools/Details/Operations/noise_reduction.js"></script>
+        <script src="Tools/Details/Operations/sharpen.js"></script>
+        <script src="Tools/Details/Operations/masking.js"></script>
+        <script src="Tools/Details/details_manager.js"></script>
+        <script src="Tools/Details/details_pipeline.js"></script>
+
+        <!------------->
+        <!----blur----->
+        <script src="Tools/Blur/blur_manager.js"></script>
+        <script src="Tools/Blur/blur_filters.js"></script>
+        <!------------->
+        <!--Curves----->
+        <script src="Tools/Curves/curves_manager.js"></script>
+        <script src="Tools/Curves/curves_pipeline.js"></script>
+        <!------------->
+        <!----Mixer---->
+        <script src="Tools/Mixer/mixer_manager.js"></script>
+        <script src="Tools/Mixer/mixer_engine.js"></script>
+        <!------------->
+        <!---Grading--->
+        <script src="Tools/Color Grading/color-grading_manager.js"></script>
+        <script src="Tools/Color Grading/color-grading_engine.js"></script>
+        <!------------->
+        <!---Layers---->
+        <script src="Tools/Layers/layer_manager.js"></script>
+        <script src="Tools/Layers/layer_engine.js"></script>
+        <!------------->
+        <!--Selection-->
+        <script src="Tools/Selection/selection_manager.js"></script>
+        <script src="Tools/Selection/selection_engine.js"></script>
+        <!------------->
+        <!---Masking--->
+        <script src="Tools/Masking/masking_manager.js"></script>
+        <script src="Tools/Masking/masking_engine.js"></script>
+        <!------------->
+        <!---Retouch--->
+        <script src="Tools/Retouch/retouch_manager.js"></script>
+        <script src="Tools/Retouch/retouch_engine.js"></script>
+        <!------------->
+        <!----Wrap----->
+        <script src="Tools/Wrap/wrap_manager.js"></script>
+        <script src="Tools/Wrap/wrap_engine.js"></script>
+        <!------------->
+        
+        
+        
+        
+        <!-------------------------------------------------->
+
+        <script src="photo_editor.js"></script>
+        <!-------------------------------------------------->
+
+    </body>
+</html>
