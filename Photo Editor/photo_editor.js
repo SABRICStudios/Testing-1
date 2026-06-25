@@ -11,7 +11,11 @@ window.imgState = {
     handleSize: 10
 };
 
+
+window.canvasRenderPending = false;
+
 window.CanvasEditor = {
+
     getState: () => window.imgState,
     
     /**
@@ -19,32 +23,32 @@ window.CanvasEditor = {
      * calculated prior to running an individual editing session tool.
      */
     getWorkingImage: () => {
-        const cleanCanvas = document.createElement('canvas');
-        if (!window.imgState.img) return cleanCanvas;
+            const cleanCanvas = document.createElement('canvas');
+            if (!window.imgState.img) return cleanCanvas;
 
-        cleanCanvas.width = window.imgState.img.width;
-        cleanCanvas.height = window.imgState.img.height;
-        
-        const ctx = cleanCanvas.getContext('2d');
-        ctx.drawImage(window.imgState.img, 0, 0);
-        return cleanCanvas;
-    },
-
-
+            cleanCanvas.width = window.imgState.img.width;
+            cleanCanvas.height = window.imgState.img.height;
+            
+            const ctx = cleanCanvas.getContext('2d');
+            ctx.drawImage(window.imgState.img, 0, 0);
+            return cleanCanvas;
+        },
 
 
-bakeDirectCanvasChanges: function() {
-        if (!window.imgState.img || !window.imgState.imageXCanvas) return;
-        
-        const nextImg = new Image();
-        nextImg.src = window.imgState.imageXCanvas.toDataURL();
-        nextImg.onload = () => {
-            window.imgState.img = nextImg;
-            if (window.HistoryManager && typeof window.HistoryManager.pushState === 'function') {
-                window.HistoryManager.pushState(nextImg);
-            }
-        };
-    },
+
+
+        bakeDirectCanvasChanges: function() {
+                if (!window.imgState.img || !window.imgState.imageXCanvas) return;
+                
+                const nextImg = new Image();
+                nextImg.src = window.imgState.imageXCanvas.toDataURL();
+                nextImg.onload = () => {
+                    window.imgState.img = nextImg;
+                    if (window.HistoryManager && typeof window.HistoryManager.pushState === 'function') {
+                        window.HistoryManager.pushState(nextImg);
+                    }
+                };
+            },
 
     // FIX: Restores the original image state onto the canvas when the user clicks Discard/Back
     rollbackDirectCanvasChanges: function(cachedImageData) {
@@ -55,275 +59,85 @@ bakeDirectCanvasChanges: function() {
     },
 
 
-
     /**
      * Central processing module processing all tools sequentially
      */
-    applyEffectsPipeline: () => {
-        if (!window.imgState.img || !window.imgState.imageXCanvas) return;
+ applyEffectsPipeline: () => {
+        // If a render frame is already scheduled or processing, skip this turn
+        if (window.canvasRenderPending) return; 
 
-        const originalImg = window.imgState.img;
-        const targetCanvas = window.imgState.imageXCanvas;
-        const ctx = targetCanvas.getContext('2d');
-
-        if (!window.HistoryManager) return;
-        const configMatrix = window.HistoryManager.getCurrentParameters();
-
-        // --- 1. DYNAMIC MATRIX TRANSFORMATION COMPOSITOR ---
-        const transformState = configMatrix.transform || { width: 0, height: 0, rotation: 0 };
+        window.canvasRenderPending = true;
         
-        const targetWidth = transformState.width || originalImg.width;
-        const targetHeight = transformState.height || originalImg.height;
-        const degrees = transformState.rotation || 0;
+        requestAnimationFrame(() => {
+            try {
+                if (!window.imgState.img || !window.imgState.imageXCanvas) return;
 
-        const isOrthogonal = (degrees / 90) % 2 !== 0;
-        targetCanvas.width = isOrthogonal ? targetHeight : targetWidth;
-        targetCanvas.height = isOrthogonal ? targetWidth : targetHeight;
+                const originalImg = window.imgState.img;
+                const targetCanvas = window.imgState.imageXCanvas;
+                const ctx = targetCanvas.getContext('2d');
 
-        ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
-        ctx.save();
-        
-        ctx.translate(targetCanvas.width / 2, targetCanvas.height / 2);
-        ctx.rotate((degrees * Math.PI) / 180);
+                // Clear and match original size coordinates cleanly
+                ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+                ctx.drawImage(originalImg, 0, 0);
 
-        const srcRatio = originalImg.width / originalImg.height;
-        const destRatio = targetWidth / targetHeight;
-
-        let renderW, renderH;
-        if (srcRatio > destRatio) {
-            renderW = targetWidth;
-            renderH = targetWidth / srcRatio;
-        } else {
-            renderH = targetHeight;
-            renderW = targetHeight * srcRatio;
-        }
-
-        ctx.drawImage(originalImg, -renderW / 2, -renderH / 2, renderW, renderH);
-        ctx.restore();
-
-        // =============================================================
-        // --- FIXED STEP: LIVE INTERCEPT FILTER DECORATOR PIPELINE ---
-        // =============================================================
-        let imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
-
-        // Fetch live live-scrubbing preview state as the primary authority if active
-        let filterState = null;
-        if (window.BaselineFilterHistory) {
-            filterState = window.BaselineFilterHistory.getCurrentState();
-        }
-
-        // If no active live preview exists, fall back to the historical committed snapshot values
-        if (!filterState || filterState.type === 'none') {
-            filterState = configMatrix.filter || { type: 'none', intensity: 100 };
-        }
-
-        // Apply filter calculations via modular entry registry
-        if (filterState && filterState.type !== 'none' && filterState.intensity > 0) {
-            if (window.FilterEngine && typeof window.FilterEngine.process === 'function') {
-                imgData = window.FilterEngine.process(imgData, filterState.type, filterState.intensity);
-            }
-        }
-
-        // --- 2. SOURCE ALIGNMENT PIXEL EFFECTS PIPELINE ---
-        let scalar = { ...(configMatrix.scalar || { exposure: 0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 }) };
-        let baseline = { ...(configMatrix.baseline || { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 }) };
-
-        // LIVE INTERCEPT: Read real-time scalar adjustments (exposure, brightness, contrast, etc.)
-        if (window.ParameterHistory && window.ParameterHistory.values) {
-            const scalarKeys = ['exposure', 'brightness', 'contrast', 'saturation', 'temperature', 'tint'];
-            scalarKeys.forEach(key => {
-                if (window.ParameterHistory.values[key] !== undefined) {
-                    scalar[key] = key === 'exposure' ? parseFloat(window.ParameterHistory.values[key]) : parseInt(window.ParameterHistory.values[key], 10);
-                }
-            });
-        }
-
-        // LIVE INTERCEPT: Read real-time baseline adjustments (highlights, shadows, etc.)
-        if (window.BaselineHistory && typeof window.BaselineHistory.getActiveState === 'function') {
-            const liveBaseline = window.BaselineHistory.getActiveState();
-            if (liveBaseline && liveBaseline.toolValues) {
-                baseline = liveBaseline.toolValues;
-            }
-        }
-
-        // LIVE INTERCEPT: If the user is actively sliding a baseline tool, read its live active state instead of history!
-        if (window.BaselineHistory && typeof window.BaselineHistory.getActiveState === 'function') {
-            const liveBaseline = window.BaselineHistory.getActiveState();
-            if (liveBaseline && liveBaseline.toolValues) {
-                baseline = liveBaseline.toolValues;
-            }
-        }
-
-        let data = imgData.data;
-        const len = data.length;
-
-        // PRE-CALCULATE SCALAR & BASELINE COEFFICIENTS
-        const contrastFactor = (259 * (canvasEditorContrastValue(scalar.contrast) + 255)) / (255 * (259 - canvasEditorContrastValue(scalar.contrast)));
-        function canvasEditorContrastValue(val) { return val; } // Safe fallback reference container wrapper
-        const saturationFactor = (scalar.saturation + 100) / 100;
-        const bright = scalar.brightness;
-        const expFactor = Math.pow(2, scalar.exposure);
-        const tempOffset = scalar.temperature * 0.4;
-        const tintOffset = scalar.tint * 0.4;
-
-        // Baseline math modifiers
-        const highFactor = baseline.highlights / 100;
-        const shadowFactor = baseline.shadows / 100;
-        const vibFactor = baseline.vibrance / 100;
-
-        for (let i = 0; i < len; i += 4) {
-            let r = data[i];
-            let g = data[i + 1];
-            let b = data[i + 2];
-
-            // --- SCALAR TOOLS ---
-            if (scalar.exposure !== 0) {
-                r *= expFactor;
-                g *= expFactor;
-                b *= expFactor;
-            }
-
-            if (bright !== 0) {
-                r += bright;
-                g += bright;
-                b += bright;
-            }
-
-            if (scalar.contrast !== 0) {
-                const cFactor = (259 * (scalar.contrast + 255)) / (255 * (259 - scalar.contrast));
-                r = cFactor * (r - 128) + 128;
-                g = cFactor * (g - 128) + 128;
-                b = cFactor * (b - 128) + 128;
-            }
-
-            if (scalar.saturation !== 0) {
-                const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                r = luma + (r - luma) * saturationFactor;
-                g = luma + (g - luma) * saturationFactor;
-                b = luma + (b - luma) * saturationFactor;
-            }
-
-            if (scalar.temperature !== 0) {
-                r += tempOffset;
-                b -= tempOffset;
-            }
-            if (scalar.tint !== 0) {
-                g += tintOffset;
-            }
-
-            // --- COMPLEX BASELINE TOOLS (Per-Pixel Operations) ---
-            const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-
-            // Highlights adjustment (targets brighter areas above midtones)
-            if (baseline.highlights !== 0 && luma > 128) {
-                const weight = Math.pow((luma - 128) / 127, 2); 
-                const diff = highFactor * 40 * weight;
-                r += diff; g += diff; b += diff;
-            }
-
-            // Shadows adjustment (targets darker areas below midtones)
-            if (baseline.shadows !== 0 && luma < 128) {
-                const weight = Math.pow((128 - luma) / 128, 2);
-                const diff = shadowFactor * 40 * weight;
-                r += diff; g += diff; b += diff;
-            }
-
-            // Vibrance adjustment (smart, selective saturation for muted tones)
-            if (baseline.vibrance !== 0) {
-                const max = Math.max(r, g, b);
-                const avg = (r + g + b) / 3;
-                const amtV = Math.abs(max - avg) * 2 / 255 * vibFactor;
-                r += (max - r) * amtV;
-                g += (max - g) * amtV;
-                b += (max - b) * amtV;
-            }
-
-            // --- LIVE CURVES VALUE MAPPING INTERCEPT ---
-            // Process pixel values directly via the channel LUT matrices before saving to the buffer array
-            if (window.CurvesManager && window.CurvesManager.activeState && window.CurvesManager.activeState.active) {
-                const curvesState = window.CurvesManager.activeState;
+                let imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
                 
-                // Clamp current channel variables to safe integers for array indexing
-                const cleanR = Math.min(255, Math.max(0, Math.round(r)));
-                const cleanG = Math.min(255, Math.max(0, Math.round(g)));
-                const cleanB = Math.min(255, Math.max(0, Math.round(b)));
+                // Fetch the absolute state snapshot from timeline tracking memory
+                let currentTrack = window.HistoryManager.getCurrentParameters();
+                let scalar = currentTrack.scalar;
+                let baseline = currentTrack.baseline;
 
-                // Apply master RGB + Individual channel lookups sequentially
-                if (curvesState.lutR) r = curvesState.lutR[cleanR];
-                if (curvesState.lutG) g = curvesState.lutG[cleanG];
-                if (curvesState.lutB) b = curvesState.lutB[cleanB];
+                // --- HARDWARE DELEGATED MATRIX FILTERS (SVG / CSS Effects) ---
+                let filterString = "";
+                if (scalar.temperature !== 0 || scalar.tint !== 0) {
+                    window.CanvasEditor._updateHardwareMatrixFilters(scalar.temperature, scalar.tint);
+                    filterString += "url(#temperatureMatrixFilter) url(#tintMatrixFilter) ";
+                }
+                ctx.filter = filterString.trim() || "none";
+
+                // --- CPU PER-PIXEL COMPUTATION KERNELS ---
+                if (scalar.exposure !== 0.0) {
+                    imgData = window.CanvasEditor._applyExposureKernel(imgData, scalar.exposure);
+                }
+                if (scalar.brightness !== 0) {
+                    imgData = window.CanvasEditor._applyBrightnessKernel(imgData, scalar.brightness);
+                }
+                if (scalar.contrast !== 0) {
+                    imgData = window.CanvasEditor._applyContrastKernel(imgData, scalar.contrast);
+                }
+                if (scalar.saturation !== 0) {
+                    imgData = window.CanvasEditor._applySaturationKernel(imgData, scalar.saturation);
+                }
+
+                // Complex Kernel Combinations
+                if (baseline.highlights !== 0 || baseline.shadows !== 0) {
+                    imgData = window.CanvasEditor._applyHighlightsShadowsKernel(imgData, baseline.highlights, baseline.shadows);
+                }
+                if (baseline.vibrance !== 0) {
+                    imgData = window.CanvasEditor._applyVibranceKernel(imgData, baseline.vibrance);
+                }
+                if (baseline.vignette !== 0) {
+                    imgData = window.CanvasEditor._applyVignetteKernel(imgData, baseline.vignette);
+                }
+                if (baseline.sharpen !== 0) {
+                    imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
+                }
+                if (baseline.clarity !== 0) {
+                    imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
+                }
+
+                // Render compiled image buffer back onto visual element frame context
+                ctx.putImageData(imgData, 0, 0);
+                window.CanvasEditor.redraw();
+                
+            } catch (error) {
+                console.error("Pipeline processing failure:", error);
+            } finally {
+                // Safely open up the block for the next browser paint layout update
+                window.canvasRenderPending = false;
             }
-
-            // Clamp and update pixel buffer array safely
-            data[i]     = Math.min(255, Math.max(0, r));
-            data[i + 1] = Math.min(255, Math.max(0, g));
-            data[i + 2] = Math.min(255, Math.max(0, b));
-        } // <--- This closes your main pixel loop (line ~240)
-
-        // --- 3. CONVOLUTIONAL AND AREA BASELINE EFFECTS ---
-
-        // NEW: Intercept here to run the high-fidelity Details Pipeline (Sharpen suite + Noise reduction suite)
-        let detailsState = configMatrix.details || { sharpenAmount: 0, sharpenRadius: 1.0, sharpenThreshold: 25, sharpenMasking: 0, noiseLuminance: 0, noiseLumDetail: 50, noiseColor: 0 };
-        if (window.DetailsManager && window.DetailsManager.activeState) {
-            // Ties the live slider scrubbing directly to the active preview canvas layout
-            detailsState = window.DetailsManager.activeState;
-        }
-        
-        if (window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
-            imgData = window.DetailsEngine.process(imgData, detailsState);
-        }
-
-
-        // Keep your existing baseline adjustments below safely:
-        // Apply Sharpening via spatial filtering convolution matrix
-        if (baseline.sharpen !== 0) {
-            imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
-        }
-
-        // Apply Clarity via localized high-pass contrast filtering
-        if (baseline.clarity !== 0) {
-            imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
-        }
-
-
-        
-
-
-        // Write the finalized image modifications back to the canvas context
-        ctx.putImageData(imgData, 0, 0);
-
-        // Apply Vignette overlay as a post-processing mask shape directly onto the context scene
-        if (baseline.vignette !== 0) {
-            ctx.save();
-            ctx.globalCompositeOperation = 'source-over';
-            
-            const cx = targetCanvas.width / 2;
-            const cy = targetCanvas.height / 2;
-            const maxRadius = Math.sqrt(cx * cx + cy * cy);
-            
-            const gradient = ctx.createRadialGradient(cx, cy, maxRadius * 0.2, cx, cy, maxRadius * 0.85);
-            const opacity = Math.min(1, Math.abs(baseline.vignette) / 100);
-            
-            if (baseline.vignette > 0) {
-                // Dark Vignette
-                gradient.addColorStop(0, 'rgba(0,0,0,0)');
-                gradient.addColorStop(1, `rgba(0,0,0,${opacity * 0.85})`);
-            } else {
-                // Light/White Vignette
-                gradient.addColorStop(0, 'rgba(255,255,255,0)');
-                gradient.addColorStop(1, `rgba(255,255,255,${opacity * 0.85})`);
-            }
-            
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
-            ctx.restore();
-        }
-
-        if (typeof window.CanvasEditor.redraw === "function") {
-            window.CanvasEditor.redraw();
-        }
+        });
     },
-
     /**
      * High-speed convolution pass used for image sharpening
      * @private
