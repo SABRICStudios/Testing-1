@@ -24,16 +24,24 @@ const ExposureTool = {
             this.exposureToolBtn.addEventListener('click', () => this.startEditingSession());
         }
 
+        // Add a local frame ID property handler to handle fast scrolling
+        this.renderFrameId = null;
+
         this.slider.addEventListener('input', (e) => {
-            if (window.ParameterHistory) {
-                window.ParameterHistory.updateValue('exposure', e.target.value);
-            }
+            // Throttle rapid mobile inputs using requestAnimationFrame
+            cancelAnimationFrame(this.renderFrameId);
+            this.renderFrameId = requestAnimationFrame(() => {
+                if (window.ParameterHistory) {
+                    window.ParameterHistory.updateValue('exposure', e.target.value);
+                }
+            });
         });
 
         if (this.confirmBtn) this.confirmBtn.addEventListener('click', () => this.handleConfirm());
         if (this.discardBtn) this.discardBtn.addEventListener('click', () => this.handleDiscard());
     },
 
+    
     startEditingSession() {
         if (window.ParameterHistory) window.ParameterHistory.startSession();
         this.galleryView.style.display = 'none';
