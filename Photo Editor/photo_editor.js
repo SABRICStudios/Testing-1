@@ -59,14 +59,14 @@ window.CanvasEditor = {
      * Optimally patched to run non-blocking on mobile viewport threads
      */
     applyEffectsPipeline: () => {
-        // FIXED: Guard clause to reject pipeline execution requests if a frame repaint cycle is pending
+        // Guard clause to reject pipeline execution requests if a frame repaint cycle is pending
         if (window.canvasRenderPending) return;
 
         if (!window.imgState.img || !window.imgState.imageXCanvas) return;
 
         window.canvasRenderPending = true;
 
-        // FIXED: Wrapped the computations back inside requestAnimationFrame to let the UI breathe
+        // Wrapped the computations back inside requestAnimationFrame to let the UI breathe
         requestAnimationFrame(() => {
             try {
                 const originalImg = window.imgState.img;
@@ -151,79 +151,90 @@ window.CanvasEditor = {
                 let data = imgData.data;
                 const len = data.length;
 
-                // PRE-CALCULATE SCALAR & BASELINE COEFFICIENTS
+                // 🌟 PERFORMANCE OPTIMIZATION: DETERMINE ACTIVE EFFECS OUTSIDE LOOP TO AVOID BRANCHING
+                const hasExposure   = scalar.exposure !== 0;
+                const hasBrightness = scalar.brightness !== 0;
+                const hasContrast   = scalar.contrast !== 0;
+                const hasSaturation = scalar.saturation !== 0;
+                const hasTempTint   = scalar.temperature !== 0 || scalar.tint !== 0;
+                const hasHighlights = baseline.highlights !== 0;
+                const hasShadows    = baseline.shadows !== 0;
+                const hasVibrance   = baseline.vibrance !== 0;
+
+                // 🌟 PERFORMANCE OPTIMIZATION: PRE-CALCULATE MULTIPLIERS AND CONSTANTS OUTSIDE THE LOOP
+                const expFactor      = hasExposure ? Math.pow(2, scalar.exposure) : 1;
+                const bright         = scalar.brightness;
+                const cFactor        = hasContrast ? (259 * (scalar.contrast + 255)) / (255 * (259 - scalar.contrast)) : 1;
                 const saturationFactor = (scalar.saturation + 100) / 100;
-                const bright = scalar.brightness;
-                const expFactor = Math.pow(2, scalar.exposure);
-                const tempOffset = scalar.temperature * 0.4;
-                const tintOffset = scalar.tint * 0.4;
+                const tempOffset     = scalar.temperature * 0.4;
+                const tintOffset     = scalar.tint * 0.4;
 
-                const highFactor = baseline.highlights / 100;
-                const shadowFactor = baseline.shadows / 100;
-                const vibFactor = baseline.vibrance / 100;
+                const highFactor     = baseline.highlights / 100;
+                const shadowFactor   = baseline.shadows / 100;
+                const vibFactor      = baseline.vibrance / 100;
 
+                // 🌟 STREAMLINED PIXEL ARRAY SWEEP LOOP
                 for (let i = 0; i < len; i += 4) {
                     let r = data[i];
                     let g = data[i + 1];
                     let b = data[i + 2];
 
-                    // --- SCALAR CORE PER-PIXEL KERNELS ---
-                    if (scalar.exposure !== 0) {
+                    // --- SCALAR ACTIONS ---
+                    if (hasExposure) {
                         r *= expFactor;
                         g *= expFactor;
                         b *= expFactor;
                     }
 
-                    if (bright !== 0) {
+                    if (hasBrightness) {
                         r += bright;
                         g += bright;
                         b += bright;
                     }
 
-                    if (scalar.contrast !== 0) {
-                        const cFactor = (259 * (scalar.contrast + 255)) / (255 * (259 - scalar.contrast));
+                    if (hasContrast) {
                         r = cFactor * (r - 128) + 128;
                         g = cFactor * (g - 128) + 128;
                         b = cFactor * (b - 128) + 128;
                     }
 
-                    if (scalar.saturation !== 0) {
+                    if (hasSaturation) {
                         const luma = 0.299 * r + 0.587 * g + 0.114 * b;
                         r = luma + (r - luma) * saturationFactor;
                         g = luma + (g - luma) * saturationFactor;
                         b = luma + (b - luma) * saturationFactor;
                     }
 
-                    if (scalar.temperature !== 0) {
+                    if (hasTempTint) {
                         r += tempOffset;
+                        g += tintOffset;
                         b -= tempOffset;
                     }
-                    if (scalar.tint !== 0) {
-                        g += tintOffset;
-                    }
 
-                    // --- COMPLEX BASELINE TOOLS ---
-                    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                    // --- COMPLEX BASELINE LINEAR CORRECTIONS ---
+                    if (hasHighlights || hasShadows || hasVibrance) {
+                        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
 
-                    if (baseline.highlights !== 0 && luma > 128) {
-                        const weight = Math.pow((luma - 128) / 127, 2); 
-                        const diff = highFactor * 40 * weight;
-                        r += diff; g += diff; b += diff;
-                    }
+                        if (hasHighlights && luma > 128) {
+                            const weight = Math.pow((luma - 128) / 127, 2); 
+                            const diff = highFactor * 40 * weight;
+                            r += diff; g += diff; b += diff;
+                        }
 
-                    if (baseline.shadows !== 0 && luma < 128) {
-                        const weight = Math.pow((128 - luma) / 128, 2);
-                        const diff = shadowFactor * 40 * weight;
-                        r += diff; g += diff; b += diff;
-                    }
+                        if (hasShadows && luma < 128) {
+                            const weight = Math.pow((128 - luma) / 128, 2);
+                            const diff = shadowFactor * 40 * weight;
+                            r += diff; g += diff; b += diff;
+                        }
 
-                    if (baseline.vibrance !== 0) {
-                        const max = Math.max(r, g, b);
-                        const avg = (r + g + b) / 3;
-                        const amtV = Math.abs(max - avg) * 2 / 255 * vibFactor;
-                        r += (max - r) * amtV;
-                        g += (max - g) * amtV;
-                        b += (max - b) * amtV;
+                        if (hasVibrance) {
+                            const max = Math.max(r, g, b);
+                            const avg = (r + g + b) / 3;
+                            const amtV = Math.abs(max - avg) * 2 / 255 * vibFactor;
+                            r += (max - r) * amtV;
+                            g += (max - g) * amtV;
+                            b += (max - b) * amtV;
+                        }
                     }
 
                     // --- LIVE CURVES VALUE MAPPING INTERCEPT ---
@@ -238,9 +249,10 @@ window.CanvasEditor = {
                         if (curvesState.lutB) b = curvesState.lutB[cleanB];
                     }
 
-                    data[i]     = Math.min(255, Math.max(0, r));
-                    data[i + 1] = Math.min(255, Math.max(0, g));
-                    data[i + 2] = Math.min(255, Math.max(0, b));
+                    // FAST TRI-VALUE CLAMP BOUNDS AND REALIGNMENT
+                    data[i]     = r > 255 ? 255 : (r < 0 ? 0 : r);
+                    data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g);
+                    data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
 
                 // --- 3. CONVOLUTIONAL AND AREA BASELINE EFFECTS ---
