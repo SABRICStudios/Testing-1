@@ -1,11 +1,10 @@
 /**
  * BaseLineHistoryManager.js
- * Manages the history states (Undo/Redo) via metadata coefficients for complex pixel manipulation tools:
- * Highlights, Shadows, Clarity, Sharpen, Vibrance, Vignette.
+ * Optimized sub-manager tracking live interactive updates and visual adjustments 
+ * for baseline tools: Highlights, Shadows, Clarity, Sharpen, Vibrance, Vignette.
  */
 class BaseLineHistoryManager {
     constructor(initialValues = {}) {
-        // Define default baseline values for the 6 complex tools
         this.defaultValues = {
             highlights: 0,
             shadows: 0,
@@ -16,126 +15,75 @@ class BaseLineHistoryManager {
             ...initialValues
         };
 
-        // History Stacks
-        this.undoStack = [];
-        this.redoStack = [];
-
-        // Track the current live active state configuration
+        // Track committed checkpoint state
         this.currentState = { ...this.defaultValues };
         
-        // --- NEW: Dynamic real-time live preview state bridge ---
+        // Transient tracking bridge for high-speed mobile slider scrubbing 
         this.liveValues = { ...this.defaultValues };
-
-        // Initialize history with the starting pristine baseline configuration
-        this._pushRawSnapshot({ ...this.currentState }, "initial_baseline");
     }
 
     /**
-     * Updates an internal parameter dynamically during a live slider interaction
-     * This triggers real-time global canvas previews without polluting undo/redo history.
+     * Updates an individual parameter dynamically during a live slider drag interaction.
+     * Keeps interactions isolated in liveValues to avoid dirtying master states prematurely.
      */
     updateLiveValue(toolKey, value) {
         if (this.liveValues.hasOwnProperty(toolKey)) {
             this.liveValues[toolKey] = parseInt(value, 10);
             
-            // Fire the global custom event to force photo_editor.js to update live
+            // Explicitly notify the master HistoryManager to maintain global parameters
+            if (window.HistoryManager && window.HistoryManager.historyStack[window.HistoryManager.currentIndex]) {
+                const activeState = window.HistoryManager.historyStack[window.HistoryManager.currentIndex].state;
+                if (activeState.baseline) {
+                    activeState.baseline[toolKey] = this.liveValues[toolKey];
+                }
+            }
+
+            // Fire global rendering loop event trigger
             window.dispatchEvent(new CustomEvent('editorHistoryChanged'));
         }
     }
 
     /**
-     * Public method to commit a new parameter state adjustment.
-     * Automatically merges with existing parameter values and clears the redo chain.
-     */
-    pushState(newValues, triggerTool = "unknown") {
-        // Merge updates with current state to ensure all parameters persist across edits
-        this.currentState = { ...this.currentState, ...newValues };
-        
-        // Keep the live values synchronized with the latest committed milestone
-        this.liveValues = { ...this.currentState };
-
-        this.redoStack = []; // Clear redo stack on structural mutation entries
-        this._pushRawSnapshot({ ...this.currentState }, triggerTool);
-        
-        return this.getActiveState();
-    }
-
-    _pushRawSnapshot(stateCopy, label) {
-        this.undoStack.push({
-            label: label,
-            values: JSON.parse(JSON.stringify(stateCopy))
-        });
-    }
-
-    undo() {
-        if (this.undoStack.length <= 1) return this.getActiveState();
-
-        const activeState = this.undoStack.pop();
-        this.redoStack.push(activeState);
-
-        const previousState = this.undoStack[this.undoStack.length - 1];
-        this.currentState = { ...previousState.values };
-        this.liveValues = { ...this.currentState };
-
-        return this.getActiveState();
-    }
-
-    redo() {
-        if (this.redoStack.length === 0) return this.getActiveState();
-
-        const restoredState = this.redoStack.pop();
-        this.undoStack.push(restoredState);
-        
-        this.currentState = { ...restoredState.values };
-        this.liveValues = { ...this.currentState };
-
-        return this.getActiveState();
-    }
-
-    /**
-     * Accessor method returning compiled state fields for pipeline ingestion.
-     * Modified to serve active scrubbing parameters dynamically.
+     * Accessor method serving current parameters up to the canvas pipeline filter loop.
      * @return {Object}
      */
     getActiveState() {
         return {
-            toolValues: { ...this.liveValues }, // FIXED: Feed active slider scrubbing context safely
-            canUndo: this.undoStack.length > 1,
-            canRedo: this.redoStack.length > 0
+            toolValues: { ...this.liveValues },
+            currentState: { ...this.currentState }
         };
     }
 
     /**
-     * Synchronizes local baseline settings with data pulled down from master timeline changes
+     * Synchronizes internal baseline states when rolling backward/forward on the master timeline
      */
     syncState(restoredBaselineValues) {
-        this.currentState = { ...restoredBaselineValues };
+        const validatedValues = restoredBaselineValues || { ...this.defaultValues };
+        this.currentState = { ...this.defaultValues, ...validatedValues };
         this.liveValues = { ...this.currentState };
         this.syncDOM();
     }
 
     /**
-     * Keeps HTML DOM slider UI elements accurately synchronized mirroring back-end memory metrics
+     * Synchronizes HTML DOM slider track inputs to visually match internal data values
      */
     syncDOM() {
         const tools = ['highlights', 'shadows', 'clarity', 'sharpen', 'vibrance', 'vignette'];
         tools.forEach(key => {
             const element = document.getElementById(`${key}Slider`);
             if (element) {
-                element.value = this.currentState[key];
+                element.value = this.currentState[key] !== undefined ? this.currentState[key] : this.defaultValues[key];
             }
         });
     }
 
     /**
-     * Resets all manager tracking properties back to zero values.
+     * Returns tracking parameters back to zero states safely
      */
     reset() {
-        this.undoStack = [];
-        this.redoStack = [];
         this.currentState = { ...this.defaultValues };
         this.liveValues = { ...this.defaultValues };
-        this._pushRawSnapshot({ ...this.currentState }, "reset");
+        this.syncDOM();
         return this.getActiveState();
     }
 }
