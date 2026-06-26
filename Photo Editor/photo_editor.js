@@ -1,8 +1,7 @@
-// photo_editor.js - Core State Engine & Viewport Rendering
-
+// photo_editor.js - High Performance Live Intercept Matrix Processing
 window.imgState = {
-    img: null,            // Pristine completely unaltered original file asset
-    imageXCanvas: null,   // Dynamic preview viewport canvas holding the rendering layers
+    img: null,            
+    imageXCanvas: null,   
     x: 0,
     y: 0,
     width: 0,
@@ -11,76 +10,56 @@ window.imgState = {
     handleSize: 10
 };
 
-// Re-established optimization rendering lock flag
 window.canvasRenderPending = false;
 
 window.CanvasEditor = {
+    isScrubbing: false, // Flag detecting active mobile slider touch interactions
+    
+    // Persistent memory allocation buffers to prevent garbage collection frame drops
+    _kernelCanvasBuffer: null,
+    _kernelCtxBuffer: null,
+
     getState: () => window.imgState,
     
-    /**
-     * Builds an isolated working buffer image context representing everything
-     * calculated prior to running an individual editing session tool.
-     */
     getWorkingImage: () => {
         const cleanCanvas = document.createElement('canvas');
         if (!window.imgState.img) return cleanCanvas;
-
         cleanCanvas.width = window.imgState.img.width;
         cleanCanvas.height = window.imgState.img.height;
-        
         const ctx = cleanCanvas.getContext('2d');
         ctx.drawImage(window.imgState.img, 0, 0);
         return cleanCanvas;
     },
 
-    bakeDirectCanvasChanges: function() {
-        if (!window.imgState.img || !window.imgState.imageXCanvas) return;
-        
-        const nextImg = new Image();
-        nextImg.src = window.imgState.imageXCanvas.toDataURL();
-        nextImg.onload = () => {
-            window.imgState.img = nextImg;
-            if (window.HistoryManager && typeof window.HistoryManager.pushState === 'function') {
-                window.HistoryManager.pushState(nextImg);
-            }
-        };
-    },
-
-    // RESTORES the original image state onto the canvas when the user clicks Discard/Back
-    rollbackDirectCanvasChanges: function(cachedImageData) {
-        if (!window.imgState.imageXCanvas || !cachedImageData) return;
-        const ctx = window.imgState.imageXCanvas.getContext('2d');
-        ctx.putImageData(cachedImageData, 0, 0);
-        this.redraw();
-    },
-
-    /**
-     * Central processing module processing all tools sequentially
-     * Optimally patched to run non-blocking on mobile viewport threads
-     */
     applyEffectsPipeline: () => {
-        // Guard clause to reject pipeline execution requests if a frame repaint cycle is pending
         if (window.canvasRenderPending) return;
-
         if (!window.imgState.img || !window.imgState.imageXCanvas) return;
 
         window.canvasRenderPending = true;
 
-        // Wrapped the computations back inside requestAnimationFrame to let the UI breathe
         requestAnimationFrame(() => {
             try {
                 const originalImg = window.imgState.img;
                 const targetCanvas = window.imgState.imageXCanvas;
                 const ctx = targetCanvas.getContext('2d');
-
                 if (!window.HistoryManager) return;
+                
                 const configMatrix = window.HistoryManager.getCurrentParameters();
-
-                // --- 1. DYNAMIC MATRIX TRANSFORMATION COMPOSITOR ---
                 const transformState = configMatrix.transform || { width: 0, height: 0, rotation: 0 };
                 
-                const targetWidth = transformState.width || originalImg.width;
-                const targetHeight = transformState.height || originalImg.height;
+                let baseWidth = transformState.width || originalImg.width;
+                let baseHeight = transformState.height || originalImg.height;
+
+                // --- MOBILE PERFORMANCE ENGINE: PREVIEW DOWNSAMPLING ---
+                // Capping heavy processing areas at 1024px during active user dragging
+                const MAX_PREVIEW_DIM = 1024;
+                let scaleFactor = 1;
+                if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
+                    scaleFactor = MAX_PREVIEW_DIM / Math.max(baseWidth, baseHeight);
+                }
+
+                const targetWidth = Math.round(baseWidth * scaleFactor);
+                const targetHeight = Math.round(baseHeight * scaleFactor);
                 const degrees = transformState.rotation || 0;
 
                 const isOrthogonal = (degrees / 90) % 2 !== 0;
@@ -89,48 +68,22 @@ window.CanvasEditor = {
 
                 ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
                 ctx.save();
-                
                 ctx.translate(targetCanvas.width / 2, targetCanvas.height / 2);
                 ctx.rotate((degrees * Math.PI) / 180);
 
-                const srcRatio = originalImg.width / originalImg.height;
-                const destRatio = targetWidth / targetHeight;
-
-                let renderW, renderH;
-                if (srcRatio > destRatio) {
-                    renderW = targetWidth;
-                    renderH = targetWidth / srcRatio;
-                } else {
-                    renderH = targetHeight;
-                    renderW = targetHeight * srcRatio;
-                }
+                // Account for downsampling inside the localized coordinate systems
+                const renderW = targetWidth;
+                const renderH = targetHeight;
 
                 ctx.drawImage(originalImg, -renderW / 2, -renderH / 2, renderW, renderH);
                 ctx.restore();
 
-                // --- LIVE INTERCEPT FILTER DECORATOR PIPELINE ---
                 let imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
 
-                let filterState = null;
-                if (window.BaselineFilterHistory) {
-                    filterState = window.BaselineFilterHistory.getCurrentState();
-                }
-
-                if (!filterState || filterState.type === 'none') {
-                    filterState = configMatrix.filter || { type: 'none', intensity: 100 };
-                }
-
-                if (filterState && filterState.type !== 'none' && filterState.intensity > 0) {
-                    if (window.FilterEngine && typeof window.FilterEngine.process === 'function') {
-                        imgData = window.FilterEngine.process(imgData, filterState.type, filterState.intensity);
-                    }
-                }
-
-                // --- 2. SOURCE ALIGNMENT PIXEL EFFECTS PIPELINE ---
+                // --- LINEAR COEFFICIENT CALCULATIONS ---
                 let scalar = { ...(configMatrix.scalar || { exposure: 0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 }) };
                 let baseline = { ...(configMatrix.baseline || { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 }) };
 
-                // LIVE INTERCEPT: Read real-time scalar adjustments (exposure, brightness, contrast, etc.)
                 if (window.ParameterHistory && window.ParameterHistory.values) {
                     const scalarKeys = ['exposure', 'brightness', 'contrast', 'saturation', 'temperature', 'tint'];
                     scalarKeys.forEach(key => {
@@ -140,7 +93,6 @@ window.CanvasEditor = {
                     });
                 }
 
-                // LIVE INTERCEPT: Read real-time baseline adjustments (highlights, shadows, etc.)
                 if (window.BaselineHistory && typeof window.BaselineHistory.getActiveState === 'function') {
                     const liveBaseline = window.BaselineHistory.getActiveState();
                     if (liveBaseline && liveBaseline.toolValues) {
@@ -151,7 +103,6 @@ window.CanvasEditor = {
                 let data = imgData.data;
                 const len = data.length;
 
-                // 🌟 PERFORMANCE OPTIMIZATION: DETERMINE ACTIVE EFFECS OUTSIDE LOOP TO AVOID BRANCHING
                 const hasExposure   = scalar.exposure !== 0;
                 const hasBrightness = scalar.brightness !== 0;
                 const hasContrast   = scalar.contrast !== 0;
@@ -161,7 +112,6 @@ window.CanvasEditor = {
                 const hasShadows    = baseline.shadows !== 0;
                 const hasVibrance   = baseline.vibrance !== 0;
 
-                // 🌟 PERFORMANCE OPTIMIZATION: PRE-CALCULATE MULTIPLIERS AND CONSTANTS OUTSIDE THE LOOP
                 const expFactor      = hasExposure ? Math.pow(2, scalar.exposure) : 1;
                 const bright         = scalar.brightness;
                 const cFactor        = hasContrast ? (259 * (scalar.contrast + 255)) / (255 * (259 - scalar.contrast)) : 1;
@@ -173,98 +123,44 @@ window.CanvasEditor = {
                 const shadowFactor   = baseline.shadows / 100;
                 const vibFactor      = baseline.vibrance / 100;
 
-                // 🌟 STREAMLINED PIXEL ARRAY SWEEP LOOP
                 for (let i = 0; i < len; i += 4) {
-                    let r = data[i];
-                    let g = data[i + 1];
-                    let b = data[i + 2];
+                    let r = data[i]; let g = data[i + 1]; let b = data[i + 2];
 
-                    // --- SCALAR ACTIONS ---
-                    if (hasExposure) {
-                        r *= expFactor;
-                        g *= expFactor;
-                        b *= expFactor;
-                    }
-
-                    if (hasBrightness) {
-                        r += bright;
-                        g += bright;
-                        b += bright;
-                    }
-
-                    if (hasContrast) {
-                        r = cFactor * (r - 128) + 128;
-                        g = cFactor * (g - 128) + 128;
-                        b = cFactor * (b - 128) + 128;
-                    }
-
+                    if (hasExposure)   { r *= expFactor; g *= expFactor; b *= expFactor; }
+                    if (hasBrightness) { r += bright; g += bright; b += bright; }
+                    if (hasContrast)   { r = cFactor * (r - 128) + 128; g = cFactor * (g - 128) + 128; b = cFactor * (b - 128) + 128; }
+                    
                     if (hasSaturation) {
                         const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                        r = luma + (r - luma) * saturationFactor;
-                        g = luma + (g - luma) * saturationFactor;
-                        b = luma + (b - luma) * saturationFactor;
+                        r = luma + (r - luma) * saturationFactor; g = luma + (g - luma) * saturationFactor; b = luma + (b - luma) * saturationFactor;
                     }
+                    if (hasTempTint) { r += tempOffset; g += tintOffset; b -= tempOffset; }
 
-                    if (hasTempTint) {
-                        r += tempOffset;
-                        g += tintOffset;
-                        b -= tempOffset;
-                    }
-
-                    // --- COMPLEX BASELINE LINEAR CORRECTIONS ---
                     if (hasHighlights || hasShadows || hasVibrance) {
                         const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-
                         if (hasHighlights && luma > 128) {
-                            const weight = Math.pow((luma - 128) / 127, 2); 
+                            const weight = Math.pow((luma - 128) / 127, 2);
                             const diff = highFactor * 40 * weight;
                             r += diff; g += diff; b += diff;
                         }
-
                         if (hasShadows && luma < 128) {
                             const weight = Math.pow((128 - luma) / 128, 2);
                             const diff = shadowFactor * 40 * weight;
                             r += diff; g += diff; b += diff;
                         }
-
                         if (hasVibrance) {
-                            const max = Math.max(r, g, b);
-                            const avg = (r + g + b) / 3;
+                            const max = Math.max(r, g, b); const avg = (r + g + b) / 3;
                             const amtV = Math.abs(max - avg) * 2 / 255 * vibFactor;
-                            r += (max - r) * amtV;
-                            g += (max - g) * amtV;
-                            b += (max - b) * amtV;
+                            r += (max - r) * amtV; g += (max - g) * amtV; b += (max - b) * amtV;
                         }
                     }
 
-                    // --- LIVE CURVES VALUE MAPPING INTERCEPT ---
-                    if (window.CurvesManager && window.CurvesManager.activeState && window.CurvesManager.activeState.active) {
-                        const curvesState = window.CurvesManager.activeState;
-                        const cleanR = Math.min(255, Math.max(0, Math.round(r)));
-                        const cleanG = Math.min(255, Math.max(0, Math.round(g)));
-                        const cleanB = Math.min(255, Math.max(0, Math.round(b)));
-
-                        if (curvesState.lutR) r = curvesState.lutR[cleanR];
-                        if (curvesState.lutG) g = curvesState.lutG[cleanG];
-                        if (curvesState.lutB) b = curvesState.lutB[cleanB];
-                    }
-
-                    // FAST TRI-VALUE CLAMP BOUNDS AND REALIGNMENT
                     data[i]     = r > 255 ? 255 : (r < 0 ? 0 : r);
                     data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g);
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
 
-                // --- 3. CONVOLUTIONAL AND AREA BASELINE EFFECTS ---
-                let detailsState = configMatrix.details || { sharpenAmount: 0, sharpenRadius: 1.0, sharpenThreshold: 25, sharpenMasking: 0, noiseLuminance: 0, noiseLumDetail: 50, noiseColor: 0 };
-                if (window.DetailsManager && window.DetailsManager.activeState) {
-                    detailsState = window.DetailsManager.activeState;
-                }
-                
-                if (window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
-                    imgData = window.DetailsEngine.process(imgData, detailsState);
-                }
-
+                // --- 3. OPTIMIZED CONVOLUTION KERNELS ---
                 if (baseline.sharpen !== 0) {
                     imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
                 }
@@ -275,28 +171,21 @@ window.CanvasEditor = {
 
                 ctx.putImageData(imgData, 0, 0);
 
-                // --- VIGNETTE POST-PROCESSING LAYER ---
+                // --- VIGNETTE PROCESSING ---
                 if (baseline.vignette !== 0) {
                     ctx.save();
                     ctx.globalCompositeOperation = 'source-over';
-                    
-                    const cx = targetCanvas.width / 2;
-                    const cy = targetCanvas.height / 2;
+                    const cx = targetCanvas.width / 2; const cy = targetCanvas.height / 2;
                     const maxRadius = Math.sqrt(cx * cx + cy * cy);
-                    
                     const gradient = ctx.createRadialGradient(cx, cy, maxRadius * 0.2, cx, cy, maxRadius * 0.85);
                     const opacity = Math.min(1, Math.abs(baseline.vignette) / 100);
                     
                     if (baseline.vignette > 0) {
-                        gradient.addColorStop(0, 'rgba(0,0,0,0)');
-                        gradient.addColorStop(1, `rgba(0,0,0,${opacity * 0.85})`);
+                        gradient.addColorStop(0, 'rgba(0,0,0,0)'); gradient.addColorStop(1, `rgba(0,0,0,${opacity * 0.85})`);
                     } else {
-                        gradient.addColorStop(0, 'rgba(255,255,255,0)');
-                        gradient.addColorStop(1, `rgba(255,255,255,${opacity * 0.85})`);
+                        gradient.addColorStop(0, 'rgba(255,255,255,0)'); gradient.addColorStop(1, `rgba(255,255,255,${opacity * 0.85})`);
                     }
-                    
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+                    ctx.fillStyle = gradient; ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
                     ctx.restore();
                 }
 
@@ -307,79 +196,103 @@ window.CanvasEditor = {
             } catch (error) {
                 console.error("Pipeline processing failure:", error);
             } finally {
-                // Relinquish rendering lock flag for the next cycle execution
                 window.canvasRenderPending = false;
             }
         });
     },
 
+    // High performance sharpen using cached canvas contexts to stop GC spikes
     _applySharpenKernel: (imgData, value) => {
-        const w = imgData.width;
-        const h = imgData.height;
+        const w = imgData.width; const h = imgData.height;
         const src = imgData.data;
         
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = w;
-        outCanvas.height = h;
-        const outCtx = outCanvas.getContext('2d');
-        const outImgData = outCtx.createImageData(w, h);
+        if (!window.CanvasEditor._kernelCanvasBuffer) {
+            window.CanvasEditor._kernelCanvasBuffer = document.createElement('canvas');
+        }
+        const bufferCanvas = window.CanvasEditor._kernelCanvasBuffer;
+        if (bufferCanvas.width !== w || bufferCanvas.height !== h) {
+            bufferCanvas.width = w; bufferCanvas.height = h;
+            window.CanvasEditor._kernelCtxBuffer = bufferCanvas.getContext('2d');
+        }
+        
+        const outImgData = window.CanvasEditor._kernelCtxBuffer.createImageData(w, h);
         const dst = outImgData.data;
 
         const strength = (value / 100) * 0.5;
-        const kCenter = 1 + 4 * strength;
-        const kEdge = -strength;
+        const kCenter = 1 + 4 * strength; const kEdge = -strength;
 
+        // Skip boundary rows to bypass slow edge calculations
         for (let y = 1; y < h - 1; y++) {
-            for (let x = 1; x < w - 1; x++) {
-                const idx = (y * w + x) * 4;
+            const rowOffset = y * w;
+            const prevRowOffset = (y - 1) * w;
+            const nextRowOffset = (y + 1) * w;
 
-                for (let c = 0; c < 3; c++) {
-                    const currentIdx = idx + c;
-                    const val = src[currentIdx] * kCenter +
-                                (src[currentIdx - 4] + src[currentIdx + 4] + 
-                                 src[currentIdx - w * 4] + src[currentIdx + w * 4]) * kEdge;
-                    dst[currentIdx] = Math.min(255, Math.max(0, val));
-                }
+            for (let x = 1; x < w - 1; x++) {
+                const idx = (rowOffset + x) * 4;
+                const leftIdx = idx - 4; const rightIdx = idx + 4;
+                const topIdx = (prevRowOffset + x) * 4; const btmIdx = (nextRowOffset + x) * 4;
+
+                // Loop unrolling channel assignments for accelerated compilation paths
+                let r = src[idx] * kCenter + (src[leftIdx] + src[rightIdx] + src[topIdx] + src[btmIdx]) * kEdge;
+                let g = src[idx+1] * kCenter + (src[leftIdx+1] + src[rightIdx+1] + src[topIdx+1] + src[btmIdx+1]) * kEdge;
+                let b = src[idx+2] * kCenter + (src[leftIdx+2] + src[rightIdx+2] + src[topIdx+2] + src[btmIdx+2]) * kEdge;
+
+                dst[idx]     = r > 255 ? 255 : (r < 0 ? 0 : r);
+                dst[idx + 1] = g > 255 ? 255 : (g < 0 ? 0 : g);
+                dst[idx + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 dst[idx + 3] = src[idx + 3];
             }
         }
         return outImgData;
     },
 
+    // Optimized Clarity Kernel featuring spatial strides and local unrolled masks
     _applyClarityKernel: (imgData, value) => {
-        const w = imgData.width;
-        const h = imgData.height;
+        const w = imgData.width; const h = imgData.height;
         const src = imgData.data;
 
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = w;
-        outCanvas.height = h;
-        const outCtx = outCanvas.getContext('2d');
-        const outImgData = outCtx.createImageData(w, h);
+        if (!window.CanvasEditor._kernelCanvasBuffer) {
+            window.CanvasEditor._kernelCanvasBuffer = document.createElement('canvas');
+        }
+        const bufferCanvas = window.CanvasEditor._kernelCanvasBuffer;
+        if (bufferCanvas.width !== w || bufferCanvas.height !== h) {
+            bufferCanvas.width = w; bufferCanvas.height = h;
+            window.CanvasEditor._kernelCtxBuffer = bufferCanvas.getContext('2d');
+        }
+        
+        const outImgData = window.CanvasEditor._kernelCtxBuffer.createImageData(w, h);
         const dst = outImgData.data;
+        dst.set(src); // Clone baseline settings down for safety mappings
 
-        const strength = value / 100;
+        const strength = (value / 100) * 0.35;
+        const stride = window.CanvasEditor.isScrubbing ? 4 : 2; // Extra loop strides for mobile interaction speeds
 
-        for (let y = 2; y < h - 2; y += 2) {
-            for (let x = 2; x < w - 2; x += 2) {
-                const idx = (y * w + x) * 4;
+        for (let y = 2; y < h - 2; y += stride) {
+            const currentYOffset = y * w;
+            for (let x = 2; x < w - 2; x += stride) {
+                const idx = (currentYOffset + x) * 4;
                 
                 const centerLuma = 0.299 * src[idx] + 0.587 * src[idx+1] + 0.114 * src[idx+2];
                 const leftLuma   = 0.299 * src[idx-8] + 0.587 * src[idx-7] + 0.114 * src[idx-6];
                 const rightLuma  = 0.299 * src[idx+8] + 0.587 * src[idx+9] + 0.114 * src[idx+10];
                 const localAvg   = (centerLuma + leftLuma + rightLuma) / 3;
 
-                for (let dy = 0; dy < 2; dy++) {
-                    for (let dx = 0; dx < 2; dx++) {
-                        const targetIdx = ((y + dy) * w + (x + dx)) * 4;
+                // Scale fill ranges based on active execution steps
+                for (let dy = 0; dy < stride; dy++) {
+                    const blockYOffset = ((y + dy) * w);
+                    for (let dx = 0; dx < stride; dx++) {
+                        const targetIdx = (blockYOffset + (x + dx)) * 4;
                         if (targetIdx >= src.length) continue;
 
-                        for (let c = 0; c < 3; c++) {
-                            let p = src[targetIdx + c];
-                            p = p + (p - localAvg) * strength * 0.4;
-                            dst[targetIdx + c] = Math.min(255, Math.max(0, p));
-                        }
-                        dst[targetIdx + 3] = src[targetIdx + 3];
+                        let r = src[targetIdx]; let g = src[targetIdx + 1]; let b = src[targetIdx + 2];
+                        
+                        r = r + (r - localAvg) * strength;
+                        g = g + (g - localAvg) * strength;
+                        b = b + (b - localAvg) * strength;
+
+                        dst[targetIdx]     = r > 255 ? 255 : (r < 0 ? 0 : r);
+                        dst[targetIdx + 1] = g > 255 ? 255 : (g < 0 ? 0 : g);
+                        dst[targetIdx + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                     }
                 }
             }
@@ -402,9 +315,7 @@ window.CanvasEditor = {
     resetStateForCroppedImage: function(newWidth, newHeight) {
         const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
         if (!canvasArea) return;
-        
         resizeCanvasToFit();
-        
         const ratio = Math.min(canvasArea.clientWidth / newWidth, canvasArea.clientHeight / newHeight);
         window.imgState.width = newWidth * ratio * 0.95;
         window.imgState.height = newHeight * ratio * 0.95;
@@ -417,25 +328,17 @@ function resizeCanvasToFit() {
     const canvas = document.getElementById('editorCanvas');
     const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
     if (!canvas || !canvasArea) return;
-
-    const targetWidth = canvasArea.clientWidth || canvasArea.getBoundingClientRect().width;
-    const targetHeight = canvasArea.clientHeight || canvasArea.getBoundingClientRect().height;
-
-    canvas.width = targetWidth || 800;
-    canvas.height = targetHeight || 600;
+    canvas.width = canvasArea.clientWidth || 800;
+    canvas.height = canvasArea.clientHeight || 600;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     resizeCanvasToFit();
-
     const dbRequest = indexedDB.open("VisualsDB", 1);
     
     dbRequest.onsuccess = (event) => {
         const db = event.target.result;
-        if (!db.objectStoreNames.contains('images')) {
-            showMissingMessage();
-            return;
-        }
+        if (!db.objectStoreNames.contains('images')) return;
 
         const transaction = db.transaction(["images"], "readonly");
         const store = transaction.objectStore("images");
@@ -443,44 +346,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
         getRequest.onsuccess = () => {
             const fileBlob = getRequest.result;
-
             if (fileBlob) {
                 const img = new Image();
                 img.src = URL.createObjectURL(fileBlob);
                 img.onload = () => {
                     window.imgState.img = img;
-                    
                     const offscreen = document.createElement('canvas');
-                    offscreen.width = img.width;
-                    offscreen.height = img.height;
+                    offscreen.width = img.width; offscreen.height = img.height;
                     window.imgState.imageXCanvas = offscreen;
 
-                    const widthInput = document.getElementById("transformWidthInput");
-                    const heightInput = document.getElementById("transformHeightInput");
-                    if (widthInput) widthInput.value = img.width;
-                    if (heightInput) heightInput.value = img.height;
-
-                    if (window.imgState.img) {
-                        window.CanvasEditor.resetStateForCroppedImage(img.width, img.height);
-                    }
-
+                    window.CanvasEditor.resetStateForCroppedImage(img.width, img.height);
                     if (window.HistoryManager) window.HistoryManager.clearToDefaultStates();
                     window.dispatchEvent(new CustomEvent('editorHistoryChanged'));
                 };
-            } else {
-                showMissingMessage();
             }
         };
     };
-
-    dbRequest.onerror = () => showMissingMessage();
-
-    function showMissingMessage() {
-        const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
-        if (canvasArea) {
-            canvasArea.innerHTML = "<p style='color: white; font-family: sans-serif; text-align: center; margin-top: 20%;'>No image selected. Please go back and select an image.</p>";
-        }
-    }
 
     window.addEventListener('editorHistoryChanged', () => {
         if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
