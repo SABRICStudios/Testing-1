@@ -58,8 +58,8 @@ class ParameterHistoryManager {
         if (window.HistoryManager) {
             // Packages the configuration object cleanly for the master timeline stack
             window.HistoryManager.commitChange(toolLabel, {
-                type: 'baseline',
-                activeToolValues: { ...this.values }
+                type: 'scalar', // Changed from 'baseline' to match the system structure
+                values: { ...this.values }
             });
         } else {
             console.error("Master HistoryManager is missing. Cannot register scalar configuration step.");
