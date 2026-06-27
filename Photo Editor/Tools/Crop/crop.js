@@ -27,6 +27,10 @@ const CropTool = {
     boundMouseDown: null,
     boundMouseMove: null,
     boundMouseUp: null,
+    // Mobile Touch Bindings
+    boundTouchStart: null,
+    boundTouchMove: null,
+    boundTouchEnd: null,
 
     init(mainCanvasId) {
         this.mainCanvas = document.getElementById(mainCanvasId);
@@ -46,6 +50,11 @@ const CropTool = {
         this.boundMouseDown = this.onMouseDown.bind(this);
         this.boundMouseMove = this.onMouseMove.bind(this);
         this.boundMouseUp = this.onMouseUp.bind(this);
+        
+        // Bind touch counterparts
+        this.boundTouchStart = this.onTouchStart.bind(this);
+        this.boundTouchMove = this.onTouchMove.bind(this);
+        this.boundTouchEnd = this.onTouchEnd.bind(this);
 
         this.bindEvents();
     },
@@ -91,6 +100,11 @@ const CropTool = {
         this.cropCanvas.addEventListener('mousedown', this.boundMouseDown);
         this.cropCanvas.addEventListener('mousemove', this.boundMouseMove);
         window.addEventListener('mouseup', this.boundMouseUp);
+
+        // 6. Mount Touch input listeners for mobile devices ({ passive: false } allows preventDefault to stop scrolling)
+        this.cropCanvas.addEventListener('touchstart', this.boundTouchStart, { passive: false });
+        this.cropCanvas.addEventListener('touchmove', this.boundTouchMove, { passive: false });
+        window.addEventListener('touchend', this.boundTouchEnd);
     },
 
     closeModal() {
@@ -103,15 +117,33 @@ const CropTool = {
         this.cropCanvas.removeEventListener('mousedown', this.boundMouseDown);
         this.cropCanvas.removeEventListener('mousemove', this.boundMouseMove);
         window.removeEventListener('mouseup', this.boundMouseUp);
+
+        // Strip touch listeners
+        this.cropCanvas.removeEventListener('touchstart', this.boundTouchStart);
+        this.cropCanvas.removeEventListener('touchmove', this.boundTouchMove);
+        window.removeEventListener('touchend', this.boundTouchEnd);
         
         console.log("Crop Workspace Discarded.");
     },
 
     getMousePos(e) {
         const rect = this.cropCanvas.getBoundingClientRect();
+        
+        // Extract client positions based on mouse vs touch input event type
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else if (e.changedTouches && e.changedTouches.length > 0) {
+            clientX = e.changedTouches[0].clientX;
+            clientY = e.changedTouches[0].clientY;
+        }
+
         return {
-            x: ((e.clientX - rect.left) / rect.width) * this.cropCanvas.width,
-            y: ((e.clientY - rect.top) / rect.height) * this.cropCanvas.height
+            x: ((clientX - rect.left) / rect.width) * this.cropCanvas.width,
+            y: ((clientY - rect.top) / rect.height) * this.cropCanvas.height
         };
     },
 
@@ -177,7 +209,22 @@ const CropTool = {
         }
     },
 
-executeCrop() {
+    // Mobile Bridge Handlers
+    onTouchStart(e) {
+        e.preventDefault(); // Lock mobile screen context window scrolling
+        this.onMouseDown(e);
+    },
+
+    onTouchMove(e) {
+        e.preventDefault(); // Keep mobile touch inputs bound explicitly to canvas drawing
+        this.onMouseMove(e);
+    },
+
+    onTouchEnd(e) {
+        this.onMouseUp(e);
+    },
+
+    executeCrop() {
         const { x, y, width, height } = this.cropBox;
 
         // Prevent execution on accidental tiny or invalid clicks
