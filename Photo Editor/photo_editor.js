@@ -7,15 +7,15 @@ window.imgState = {
     width: 0,
     height: 0,
     isSelected: false, 
-    handleSize: 10
+    handleSize: 10,
+    maintainAspectRatio: false // Added explicit toggle state tracking natively
 };
 
 window.canvasRenderPending = false;
 
 window.CanvasEditor = {
-    isScrubbing: false, // Flag detecting active mobile slider touch interactions
+    isScrubbing: false, 
     
-    // Persistent memory allocation buffers to prevent garbage collection frame drops
     _kernelCanvasBuffer: null,
     _kernelCtxBuffer: null,
 
@@ -45,11 +45,11 @@ applyEffectsPipeline: () => {
                 if (!window.HistoryManager) return;
                 
                 const configMatrix = window.HistoryManager.getCurrentParameters();
-                const transformState = configMatrix.transform || { width: originalImg.width, height: originalImg.height, rotation: 0 };
+                const transformState = configMatrix.transform || {};
                 
-                // Read dimensions from inputs/history cleanly
-                let baseWidth = parseInt(window.imgState.width, 10) || parseInt(transformState.width, 10) || originalImg.width;
-                let baseHeight = parseInt(window.imgState.height, 10) || parseInt(transformState.height, 10) || originalImg.height;
+                // FIXED: Better dimension detection that safely falls back to original image dimensions if state parameters are 0
+                let baseWidth = parseInt(window.imgState.width, 10) || parseInt(transformState.width, 10) || originalImg.naturalWidth || originalImg.width;
+                let baseHeight = parseInt(window.imgState.height, 10) || parseInt(transformState.height, 10) || originalImg.naturalHeight || originalImg.height;
                 const degrees = window.imgState.rotation !== undefined ? parseFloat(window.imgState.rotation) : (parseFloat(transformState.rotation) || 0);
 
                 // PERFORMANCE ENGINE: PREVIEW DOWNSAMPLING
@@ -59,19 +59,29 @@ applyEffectsPipeline: () => {
                     scaleFactor = MAX_PREVIEW_DIM / Math.max(baseWidth, baseHeight);
                 }
 
-                const targetWidth = Math.round(baseWidth * scaleFactor);
-                const targetHeight = Math.round(baseHeight * scaleFactor);
+                // Ensure dimensions scale independently when not explicitly scrubbing
+                const targetWidth = window.CanvasEditor.isScrubbing 
+                    ? Math.round(baseWidth * scaleFactor) 
+                    : baseWidth;
 
-                const isOrthogonal = (Math.round(Math.abs(degrees)) / 90) % 2 === 1;
-                
-                // Maintain static, reliable backing canvas structure
-                targetCanvas.width = isOrthogonal ? targetHeight : targetWidth;
-                targetCanvas.height = isOrthogonal ? targetWidth : targetHeight;
+                const targetHeight = window.CanvasEditor.isScrubbing 
+                    ? Math.round(baseHeight * scaleFactor) 
+                    : baseHeight;
+
+
+                    const isOrthogonal = (Math.round(Math.abs(degrees)) / 90) % 2 === 1;
+
+                    // FIX: Set backing canvas to match your persistent workspace dimensions, not the image's layout values!
+                    const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
+                    targetCanvas.width = canvasArea ? (canvasArea.clientWidth || 800) : 800;
+                    targetCanvas.height = canvasArea ? (canvasArea.clientHeight || 600) : 600;
+
 
                 // FIXED: Keep tracking window.imgState width/height aligned with transformation values, 
                 // NOT the canvas boundaries, so interaction.js doesn't break.
                 window.imgState.rotation = degrees;
 
+                // FORCE HIGH-QUALITY CHROMATIC INTERPOLATION RESAMPLING
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
 
@@ -82,6 +92,7 @@ applyEffectsPipeline: () => {
                 ctx.translate(targetCanvas.width / 2, targetCanvas.height / 2);
                 ctx.rotate((degrees * Math.PI) / 180);
 
+                // Draw explicitly targeting crisp pixel data channels
                 ctx.drawImage(originalImg, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
                 ctx.restore();
 
@@ -206,7 +217,6 @@ applyEffectsPipeline: () => {
         });
     },
 
-    // High performance sharpen using cached canvas contexts to stop GC spikes
     _applySharpenKernel: (imgData, value) => {
         const w = imgData.width; const h = imgData.height;
         const src = imgData.data;
@@ -226,7 +236,6 @@ applyEffectsPipeline: () => {
         const strength = (value / 100) * 0.5;
         const kCenter = 1 + 4 * strength; const kEdge = -strength;
 
-        // Skip boundary rows to bypass slow edge calculations
         for (let y = 1; y < h - 1; y++) {
             const rowOffset = y * w;
             const prevRowOffset = (y - 1) * w;
@@ -237,7 +246,6 @@ applyEffectsPipeline: () => {
                 const leftIdx = idx - 4; const rightIdx = idx + 4;
                 const topIdx = (prevRowOffset + x) * 4; const btmIdx = (nextRowOffset + x) * 4;
 
-                // Loop unrolling channel assignments for accelerated compilation paths
                 let r = src[idx] * kCenter + (src[leftIdx] + src[rightIdx] + src[topIdx] + src[btmIdx]) * kEdge;
                 let g = src[idx+1] * kCenter + (src[leftIdx+1] + src[rightIdx+1] + src[topIdx+1] + src[btmIdx+1]) * kEdge;
                 let b = src[idx+2] * kCenter + (src[leftIdx+2] + src[rightIdx+2] + src[topIdx+2] + src[btmIdx+2]) * kEdge;
@@ -251,7 +259,6 @@ applyEffectsPipeline: () => {
         return outImgData;
     },
 
-    // Optimized Clarity Kernel featuring spatial strides and local unrolled masks
     _applyClarityKernel: (imgData, value) => {
         const w = imgData.width; const h = imgData.height;
         const src = imgData.data;
@@ -267,10 +274,10 @@ applyEffectsPipeline: () => {
         
         const outImgData = window.CanvasEditor._kernelCtxBuffer.createImageData(w, h);
         const dst = outImgData.data;
-        dst.set(src); // Clone baseline settings down for safety mappings
+        dst.set(src); 
 
         const strength = (value / 100) * 0.35;
-        const stride = window.CanvasEditor.isScrubbing ? 4 : 2; // Extra loop strides for mobile interaction speeds
+        const stride = window.CanvasEditor.isScrubbing ? 4 : 2; 
 
         for (let y = 2; y < h - 2; y += stride) {
             const currentYOffset = y * w;
@@ -282,7 +289,6 @@ applyEffectsPipeline: () => {
                 const rightLuma  = 0.299 * src[idx+8] + 0.587 * src[idx+9] + 0.114 * src[idx+10];
                 const localAvg   = (centerLuma + leftLuma + rightLuma) / 3;
 
-                // Scale fill ranges based on active execution steps
                 for (let dy = 0; dy < stride; dy++) {
                     const blockYOffset = ((y + dy) * w);
                     for (let dx = 0; dx < stride; dx++) {
@@ -313,23 +319,32 @@ applyEffectsPipeline: () => {
 
         if (!state.img || !state.imageXCanvas) return;
 
-        // Sync main preview view canvas sizing
-        canvas.width = state.imageXCanvas.width;
-        canvas.height = state.imageXCanvas.height;
+        // FIX: Lock presentation layers to the structural viewport context
+        const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
+        const targetW = canvasArea ? (canvasArea.clientWidth || 800) : 800;
+        const targetH = canvasArea ? (canvasArea.clientHeight || 600) : 600;
+        
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
+        }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // FIXED: Render the processed image layer utilizing interaction_manager offsets
+        // FIX BLUR: Keep smoothing enabled unless working with massive images under scale constraints
+        const MAX_PREVIEW_DIM = 1024;
+        const needsDownsample = (state.width > MAX_PREVIEW_DIM || state.height > MAX_PREVIEW_DIM);
+        ctx.imageSmoothingEnabled = !(window.CanvasEditor.isScrubbing && needsDownsample);
+        ctx.imageSmoothingQuality = 'high'; // Force high quality processing during resize
+
         ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
 
-        // FIXED: Render the bounding box selection outline and resize handle boxes explicitly
         if (state.isSelected && window.InteractionManager) {
             ctx.save();
-            ctx.strokeStyle = '#00bcd4'; // Clean cyan bounding border line
+            ctx.strokeStyle = '#00bcd4'; 
             ctx.lineWidth = 2;
             ctx.strokeRect(state.x, state.y, state.width, state.height);
 
-            // Draw the 4 corner handle nodes
             const handles = window.InteractionManager.getHandlePositions();
             ctx.fillStyle = '#ffffff';
             ctx.strokeStyle = '#00bcd4';
@@ -344,13 +359,10 @@ applyEffectsPipeline: () => {
         }
     },
 
-
     resetStateForCroppedImage: function(newWidth, newHeight) {
-        const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
         const canvas = document.getElementById('editorCanvas');
-        if (!canvasArea || !canvas) return;
+        if (!canvas) return;
 
-        // Set true internal pixel resolutions
         window.imgState.width = newWidth;
         window.imgState.height = newHeight;
         window.imgState.rotation = 0;
@@ -401,28 +413,24 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     };
 
-// --- Existing History Listener ---
     window.addEventListener('editorHistoryChanged', () => {
         if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
             window.CanvasEditor.applyEffectsPipeline();
         }
     });
 
-    // --- NEW ADDITION: GLOBAL SCRUBBING OPTIMIZATION OVERLAYS ---
-    // Listens for slider interactions to activate high-performance downsampling frames
+    // Mobile inputs performance tuning
     document.addEventListener("input", (e) => {
-        if (e.target && e.target.type === "range") {
+        if (e.target && (e.target.type === "range" || e.target.id === "transformWidthInput" || e.target.id === "transformHeightInput")) {
             if (!window.CanvasEditor.isScrubbing) {
                 window.CanvasEditor.isScrubbing = true;
             }
         }
     });
 
-    // Listens for the release of sliders to instantly snap back to full-resolution crisp quality
     document.addEventListener("change", (e) => {
-        if (e.target && e.target.type === "range") {
+        if (e.target && (e.target.type === "range" || e.target.id === "transformWidthInput" || e.target.id === "transformHeightInput")) {
             window.CanvasEditor.isScrubbing = false;
-            // Force an immediate re-render at full resolution now that scrubbing has finished
             if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
                 window.CanvasEditor.applyEffectsPipeline();
             }
