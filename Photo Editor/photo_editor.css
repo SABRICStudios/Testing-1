@@ -208,3 +208,129 @@ body{
     border-color: #00adb5 !important;
     color: #111 !important;
 }
+
+
+/* ==========================================================================
+   CROP TOOL MODAL OVERLAY & DECORATION
+   ========================================================================== */
+
+/* Main Fullscreen Modal Overlay */
+#cropModal {
+    display: none; /* Controlled via JS toggles */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(13, 13, 15, 0.95); /* Deep dark cyberpunk backing */
+    backdrop-filter: blur(8px); /* Soft modern background blur */
+    z-index: 2000;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+/* Header Banner inside the Modal Workspace */
+.crop-modal-header {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.crop-modal-header h3 {
+    margin: 0 0 6px 0;
+    color: #ffffff;
+    font-family: sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.crop-modal-header p {
+    margin: 0;
+    color: #b5b5be; /* Muted slate text matching mixer layout rules */
+    font-family: sans-serif;
+    font-size: 13px;
+}
+
+/* Framed Workspace bounding box around the Canvas view */
+.crop-workspace-wrapper {
+    width: 100%;
+    max-width: 85vw;
+    max-height: 65vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    margin-bottom: 25px;
+    border: 1px solid #2d2d35; /* Crisp dark framing border */
+    background-color: #1a1a1e;  /* Deep internal slate card backing */
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+/* The High-Resolution Canvas Element Frame styling overrides */
+#modalCropCanvas {
+    max-width: 100%;
+    max-height: 60vh;
+    object-fit: contain;
+    display: block;
+    border-radius: 4px;
+    cursor: crosshair;
+}
+
+/* Action Button Panel Grid beneath the layout frame */
+.crop-btn-group {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    max-width: 360px;
+    justify-content: center;
+}
+
+/* Core Crop Utility Buttons Structure base setup overrides */
+.crop-btn {
+    flex: 1;
+    padding: 11px 20px;
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 14px;
+    font-family: sans-serif;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* Cancel Action Button Variant Styling (Matches mixer-btn-discard styles) */
+.crop-btn-cancel {
+    background-color: #2d2d35; /* Deep muted slate tone */
+    color: #ef4444;            /* Vibrant crimson threat color */
+}
+
+.crop-btn-cancel:hover {
+    background-color: #3f3f4a;
+    color: #f87171;
+}
+
+/* Action Confirmation Execution Variant Button Styling (Neon Cyan highlights) */
+.crop-btn-confirm {
+    background-color: #00adb5; /* Core signature neon theme cyan accent */
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(0, 173, 181, 0.2);
+}
+
+.crop-btn-confirm:hover {
+    background-color: #02c2cc;
+    box-shadow: 0 0 16px rgba(2, 194, 204, 0.4);
+}
+
+.crop-btn:active {
+    transform: scale(0.98);
+}

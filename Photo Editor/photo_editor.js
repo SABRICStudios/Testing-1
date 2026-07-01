@@ -31,7 +31,7 @@ window.CanvasEditor = {
         return cleanCanvas;
     },
 
-    applyEffectsPipeline: () => {
+applyEffectsPipeline: () => {
         if (window.canvasRenderPending) return;
         if (!window.imgState.img || !window.imgState.imageXCanvas) return;
 
@@ -45,13 +45,14 @@ window.CanvasEditor = {
                 if (!window.HistoryManager) return;
                 
                 const configMatrix = window.HistoryManager.getCurrentParameters();
-                const transformState = configMatrix.transform || { width: 0, height: 0, rotation: 0 };
+                const transformState = configMatrix.transform || { width: originalImg.width, height: originalImg.height, rotation: 0 };
                 
-                let baseWidth = transformState.width || originalImg.width;
-                let baseHeight = transformState.height || originalImg.height;
+                // Read dimensions from inputs/history cleanly
+                let baseWidth = parseInt(window.imgState.width, 10) || parseInt(transformState.width, 10) || originalImg.width;
+                let baseHeight = parseInt(window.imgState.height, 10) || parseInt(transformState.height, 10) || originalImg.height;
+                const degrees = window.imgState.rotation !== undefined ? parseFloat(window.imgState.rotation) : (parseFloat(transformState.rotation) || 0);
 
-                // --- MOBILE PERFORMANCE ENGINE: PREVIEW DOWNSAMPLING ---
-                // Capping heavy processing areas at 1024px during active user dragging
+                // PERFORMANCE ENGINE: PREVIEW DOWNSAMPLING
                 const MAX_PREVIEW_DIM = 1024;
                 let scaleFactor = 1;
                 if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
@@ -60,22 +61,28 @@ window.CanvasEditor = {
 
                 const targetWidth = Math.round(baseWidth * scaleFactor);
                 const targetHeight = Math.round(baseHeight * scaleFactor);
-                const degrees = transformState.rotation || 0;
 
-                const isOrthogonal = (degrees / 90) % 2 !== 0;
+                const isOrthogonal = (Math.round(Math.abs(degrees)) / 90) % 2 === 1;
+                
+                // Maintain static, reliable backing canvas structure
                 targetCanvas.width = isOrthogonal ? targetHeight : targetWidth;
                 targetCanvas.height = isOrthogonal ? targetWidth : targetHeight;
 
+                // FIXED: Keep tracking window.imgState width/height aligned with transformation values, 
+                // NOT the canvas boundaries, so interaction.js doesn't break.
+                window.imgState.rotation = degrees;
+
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+
                 ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
                 ctx.save();
+                
+                // Transform around center point
                 ctx.translate(targetCanvas.width / 2, targetCanvas.height / 2);
                 ctx.rotate((degrees * Math.PI) / 180);
 
-                // Account for downsampling inside the localized coordinate systems
-                const renderW = targetWidth;
-                const renderH = targetHeight;
-
-                ctx.drawImage(originalImg, -renderW / 2, -renderH / 2, renderW, renderH);
+                ctx.drawImage(originalImg, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
                 ctx.restore();
 
                 let imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
@@ -160,7 +167,6 @@ window.CanvasEditor = {
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
 
-                // --- 3. OPTIMIZED CONVOLUTION KERNELS ---
                 if (baseline.sharpen !== 0) {
                     imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
                 }
@@ -171,7 +177,6 @@ window.CanvasEditor = {
 
                 ctx.putImageData(imgData, 0, 0);
 
-                // --- VIGNETTE PROCESSING ---
                 if (baseline.vignette !== 0) {
                     ctx.save();
                     ctx.globalCompositeOperation = 'source-over';
@@ -306,21 +311,54 @@ window.CanvasEditor = {
         const ctx = canvas.getContext('2d');
         const state = window.imgState;
 
+        if (!state.img || !state.imageXCanvas) return;
+
+        // Sync main preview view canvas sizing
+        canvas.width = state.imageXCanvas.width;
+        canvas.height = state.imageXCanvas.height;
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (state.imageXCanvas) {
-            ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
+        
+        // FIXED: Render the processed image layer utilizing interaction_manager offsets
+        ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
+
+        // FIXED: Render the bounding box selection outline and resize handle boxes explicitly
+        if (state.isSelected && window.InteractionManager) {
+            ctx.save();
+            ctx.strokeStyle = '#00bcd4'; // Clean cyan bounding border line
+            ctx.lineWidth = 2;
+            ctx.strokeRect(state.x, state.y, state.width, state.height);
+
+            // Draw the 4 corner handle nodes
+            const handles = window.InteractionManager.getHandlePositions();
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#00bcd4';
+            ctx.lineWidth = 2;
+
+            for (let key in handles) {
+                const h = handles[key];
+                ctx.fillRect(h.x, h.y, state.handleSize, state.handleSize);
+                ctx.strokeRect(h.x, h.y, state.handleSize, state.handleSize);
+            }
+            ctx.restore();
         }
     },
 
+
     resetStateForCroppedImage: function(newWidth, newHeight) {
         const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
-        if (!canvasArea) return;
-        resizeCanvasToFit();
-        const ratio = Math.min(canvasArea.clientWidth / newWidth, canvasArea.clientHeight / newHeight);
-        window.imgState.width = newWidth * ratio * 0.95;
-        window.imgState.height = newHeight * ratio * 0.95;
-        window.imgState.x = (canvasArea.clientWidth - window.imgState.width) / 2;
-        window.imgState.y = (canvasArea.clientHeight - window.imgState.height) / 2;
+        const canvas = document.getElementById('editorCanvas');
+        if (!canvasArea || !canvas) return;
+
+        // Set true internal pixel resolutions
+        window.imgState.width = newWidth;
+        window.imgState.height = newHeight;
+        window.imgState.rotation = 0;
+        window.imgState.x = 0;
+        window.imgState.y = 0;
+
+        canvas.width = newWidth;
+        canvas.height = newHeight;
     }
 };
 
@@ -363,9 +401,31 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     };
 
+// --- Existing History Listener ---
     window.addEventListener('editorHistoryChanged', () => {
         if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
             window.CanvasEditor.applyEffectsPipeline();
+        }
+    });
+
+    // --- NEW ADDITION: GLOBAL SCRUBBING OPTIMIZATION OVERLAYS ---
+    // Listens for slider interactions to activate high-performance downsampling frames
+    document.addEventListener("input", (e) => {
+        if (e.target && e.target.type === "range") {
+            if (!window.CanvasEditor.isScrubbing) {
+                window.CanvasEditor.isScrubbing = true;
+            }
+        }
+    });
+
+    // Listens for the release of sliders to instantly snap back to full-resolution crisp quality
+    document.addEventListener("change", (e) => {
+        if (e.target && e.target.type === "range") {
+            window.CanvasEditor.isScrubbing = false;
+            // Force an immediate re-render at full resolution now that scrubbing has finished
+            if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+                window.CanvasEditor.applyEffectsPipeline();
+            }
         }
     });
 });
