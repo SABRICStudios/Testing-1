@@ -47,7 +47,6 @@ applyEffectsPipeline: () => {
                 const configMatrix = window.HistoryManager.getCurrentParameters();
                 const transformState = configMatrix.transform || {};
                 
-                // FIXED: Better dimension detection that safely falls back to original image dimensions if state parameters are 0
                 let baseWidth = parseInt(window.imgState.width, 10) || parseInt(transformState.width, 10) || originalImg.naturalWidth || originalImg.width;
                 let baseHeight = parseInt(window.imgState.height, 10) || parseInt(transformState.height, 10) || originalImg.naturalHeight || originalImg.height;
                 const degrees = window.imgState.rotation !== undefined ? parseFloat(window.imgState.rotation) : (parseFloat(transformState.rotation) || 0);
@@ -59,7 +58,6 @@ applyEffectsPipeline: () => {
                     scaleFactor = MAX_PREVIEW_DIM / Math.max(baseWidth, baseHeight);
                 }
 
-                // Ensure dimensions scale independently when not explicitly scrubbing
                 const targetWidth = window.CanvasEditor.isScrubbing 
                     ? Math.round(baseWidth * scaleFactor) 
                     : baseWidth;
@@ -68,33 +66,18 @@ applyEffectsPipeline: () => {
                     ? Math.round(baseHeight * scaleFactor) 
                     : baseHeight;
 
-
-                    const isOrthogonal = (Math.round(Math.abs(degrees)) / 90) % 2 === 1;
-
-                    // FIX: Set backing canvas to match your persistent workspace dimensions, not the image's layout values!
-                    const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
-                    targetCanvas.width = canvasArea ? (canvasArea.clientWidth || 800) : 800;
-                    targetCanvas.height = canvasArea ? (canvasArea.clientHeight || 600) : 600;
-
-
-                // FIXED: Keep tracking window.imgState width/height aligned with transformation values, 
-                // NOT the canvas boundaries, so interaction.js doesn't break.
+                // Set backing buffer canvas strictly to the straight base dimensions
+                targetCanvas.width = targetWidth;
+                targetCanvas.height = targetHeight;
                 window.imgState.rotation = degrees;
 
-                // FORCE HIGH-QUALITY CHROMATIC INTERPOLATION RESAMPLING
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
 
                 ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
-                ctx.save();
                 
-                // Transform around center point
-                ctx.translate(targetCanvas.width / 2, targetCanvas.height / 2);
-                ctx.rotate((degrees * Math.PI) / 180);
-
-                // Draw explicitly targeting crisp pixel data channels
-                ctx.drawImage(originalImg, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
-                ctx.restore();
+                // Draw normal unrotated image texture onto processing canvas
+                ctx.drawImage(originalImg, 0, 0, targetWidth, targetHeight);
 
                 let imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
 
@@ -311,7 +294,7 @@ applyEffectsPipeline: () => {
         return outImgData;
     },
     
-    redraw: () => {
+        redraw: () => {
         const canvas = document.getElementById('editorCanvas');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -319,7 +302,6 @@ applyEffectsPipeline: () => {
 
         if (!state.img || !state.imageXCanvas) return;
 
-        // FIX: Lock presentation layers to the structural viewport context
         const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
         const targetW = canvasArea ? (canvasArea.clientWidth || 800) : 800;
         const targetH = canvasArea ? (canvasArea.clientHeight || 600) : 600;
@@ -331,16 +313,28 @@ applyEffectsPipeline: () => {
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // FIX BLUR: Keep smoothing enabled unless working with massive images under scale constraints
         const MAX_PREVIEW_DIM = 1024;
         const needsDownsample = (state.width > MAX_PREVIEW_DIM || state.height > MAX_PREVIEW_DIM);
         ctx.imageSmoothingEnabled = !(window.CanvasEditor.isScrubbing && needsDownsample);
-        ctx.imageSmoothingQuality = 'high'; // Force high quality processing during resize
+        ctx.imageSmoothingQuality = 'high';
 
+        // --- NEW MATRIX ROTATION FOR THE ENTIRE CANVAS ENVELOPE LAYER ---
+        ctx.save();
+        
+        // Calculate original center point of the drawn asset space
+        const centerX = state.x + state.width / 2;
+        const centerY = state.y + state.height / 2;
+
+        // Move context matrix to the middle point, rotate, and move back
+        ctx.translate(centerX, centerY);
+        ctx.rotate((state.rotation * Math.PI) / 180);
+        ctx.translate(-centerX, -centerY);
+
+        // Draw the processed layer flat. The canvas matrix will turn it gracefully.
         ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
 
+        // Draw transformation handles inside the rotated matrix layer context so they stay attached to corners!
         if (state.isSelected && window.InteractionManager) {
-            ctx.save();
             ctx.strokeStyle = '#00bcd4'; 
             ctx.lineWidth = 2;
             ctx.strokeRect(state.x, state.y, state.width, state.height);
@@ -355,8 +349,9 @@ applyEffectsPipeline: () => {
                 ctx.fillRect(h.x, h.y, state.handleSize, state.handleSize);
                 ctx.strokeRect(h.x, h.y, state.handleSize, state.handleSize);
             }
-            ctx.restore();
         }
+        
+        ctx.restore();
     },
 
     resetStateForCroppedImage: function(newWidth, newHeight) {
