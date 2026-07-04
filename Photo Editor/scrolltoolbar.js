@@ -22,7 +22,7 @@ class ScrollToolbar {
         this.init();
     }
 
-    init() {
+init() {
         // Desktop Mouse Click & Drag
         this.toolbar.addEventListener('mousedown', (e) => this.dragStart(e));
         window.addEventListener('mousemove', (e) => this.dragMove(e));
@@ -34,14 +34,18 @@ class ScrollToolbar {
         // Standard Mouse Wheel Vector Translation
         this.toolbar.addEventListener('wheel', (e) => this.handleWheel(e), { passive: false });
 
+        // --- NEW: Mobile Touch Events ---
+        this.toolbar.addEventListener('touchstart', (e) => this.dragStart(e), { passive: true });
+        window.addEventListener('touchmove', (e) => this.dragMove(e), { passive: false });
+        window.addEventListener('touchend', () => this.dragEnd());
+
         // Touch Prevention Override (Keeps mobile trackpad scrolling clean)
         this.toolbar.style.webkitOverflowScrolling = 'touch';
     }
-
     dragStart(e) {
         this.isDragging = true;
         this.toolbar.classList.add('dragging');
-        
+        const pageX = e.type.includes('touch') ? e.touches[0].pageX : e.pageX;
         // Cancel active kinetic animations smoothly on click down
         if (this.rafId) cancelAnimationFrame(this.rafId);
 
@@ -60,7 +64,7 @@ class ScrollToolbar {
 
         const currentX = e.pageX - this.toolbar.offsetLeft;
         const deltaX = (currentX - this.startX) * 1.2; // 1.2x Responsiveness scalar
-        
+        const pageX = e.type.includes('touch') ? e.touches[0].pageX : e.pageX;
         this.toolbar.scrollLeft = this.scrollStartX - deltaX;
 
         // Calculate Real-time Instantaneous Velocity Matrix

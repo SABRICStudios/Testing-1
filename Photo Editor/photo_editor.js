@@ -26,9 +26,41 @@ window.CanvasEditor = {
         if (!window.imgState.img) return cleanCanvas;
         cleanCanvas.width = window.imgState.img.width;
         cleanCanvas.height = window.imgState.img.height;
-        const ctx = cleanCanvas.getContext('2d');
-        ctx.drawImage(window.imgState.img, 0, 0);
-        return cleanCanvas;
+        // --- NEW FIXED RENDER SEGMENT ---
+                const ctx = canvas.getContext('2d');
+                
+                // 1. Sync structural display dimensions with its layout container bounds
+                const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
+                const displayWidth = canvasArea ? (canvasArea.clientWidth || 800) : 800;
+                const displayHeight = canvasArea ? (canvasArea.clientHeight || 600) : 600;
+                
+                if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                    canvas.width = displayWidth;
+                    canvas.height = displayHeight;
+                }
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // 2. Render using the stored centered bounding properties
+                const state = window.imgState;
+                ctx.save();
+                
+                // Move origin point to the center of the image area for stable transformations
+                ctx.translate(state.x + state.width / 2, state.y + state.height / 2);
+                if (state.rotation) {
+                    ctx.rotate((state.rotation * Math.PI) / 180);
+                }
+                
+                // Draw image centered on origin transformation point
+                ctx.drawImage(
+                    window.imgState.imageXCanvas, 
+                    -state.width / 2, 
+                    -state.height / 2, 
+                    state.width, 
+                    state.height
+                );
+                
+                ctx.restore();
     },
 
 applyEffectsPipeline: () => {
@@ -160,6 +192,24 @@ applyEffectsPipeline: () => {
                     data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g);
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
+
+                // --- ADD THIS BLOCK: APPLY FILTER ENGINE ---
+                if (configMatrix.filter && configMatrix.filter.type !== 'none' && window.FilterEngine) {
+                    imgData = window.FilterEngine.process(
+                        imgData, 
+                        configMatrix.filter.type, 
+                        configMatrix.filter.intensity
+                    );
+                }
+                // -------------------------------------------
+
+                if (baseline.sharpen !== 0) {
+                    imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
+                }
+
+                if (baseline.clarity !== 0) {
+                    imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
+                }
 
                 if (baseline.sharpen !== 0) {
                     imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
@@ -396,12 +446,49 @@ document.addEventListener("DOMContentLoaded", () => {
                 img.src = URL.createObjectURL(fileBlob);
                 img.onload = () => {
                     window.imgState.img = img;
+                    
+                    // 1. Calculate display viewport boundaries
+                    const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
+                    const maxDisplayW = canvasArea ? (canvasArea.clientWidth || 800) : 800;
+                    const maxDisplayH = canvasArea ? (canvasArea.clientHeight || 600) : 600;
+
+                    // Apply a 10% safety visual padding margin
+                    const allowedW = maxDisplayW * 0.9;
+                    const allowedH = maxDisplayH * 0.9;
+
+                    // 2. Aspect-ratio containment scale calculation
+                    let displayW = img.width;
+                    let displayH = img.height;
+                    
+                    if (displayW > allowedW || displayH > allowedH) {
+                        const scaleX = allowedW / displayW;
+                        const scaleY = allowedH / displayH;
+                        const fitScale = Math.min(scaleX, scaleY);
+                        
+                        displayW = Math.round(displayW * fitScale);
+                        displayH = Math.round(displayH * fitScale);
+                    }
+
+                    // 3. Assign scaled values and calculate perfect center alignment positions
+                    window.imgState.x = Math.round((maxDisplayW - displayW) / 2);
+                    window.imgState.y = Math.round((maxDisplayH - displayH) / 2);
+                    window.imgState.width = displayW;
+                    window.imgState.height = displayH;
+                    window.imgState.rotation = 0; 
+                    window.imgState.isSelected = true;
+
+                    // 4. Initialize structural offscreen backing buffer at source res
                     const offscreen = document.createElement('canvas');
-                    offscreen.width = img.width; offscreen.height = img.height;
+                    offscreen.width = img.width; 
+                    offscreen.height = img.height;
                     window.imgState.imageXCanvas = offscreen;
 
-                    window.CanvasEditor.resetStateForCroppedImage(img.width, img.height);
-                    if (window.HistoryManager) window.HistoryManager.clearToDefaultStates();
+                    if (window.CanvasEditor.resetStateForCroppedImage) {
+                        window.CanvasEditor.resetStateForCroppedImage(displayW, displayH);
+                    }
+                    if (window.HistoryManager) {
+                        window.HistoryManager.clearToDefaultStates();
+                    }
                     window.dispatchEvent(new CustomEvent('editorHistoryChanged'));
                 };
             }

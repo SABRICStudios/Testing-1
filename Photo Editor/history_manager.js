@@ -1,4 +1,4 @@
-// history_manager.js - Central Orchestrator & App Timeline Manager
+// history_manager_3.js - Central Orchestrator & App Timeline Manager
 
 class MasterHistoryManager {
     constructor(maxHistory = 20) {
@@ -7,10 +7,11 @@ class MasterHistoryManager {
         this.currentIndex = -1;
 
         // Factory defaults mapping all parameters plus structural transform parameters
-       this.defaultState = {
+        this.defaultState = {
             scalar: { exposure: 0.0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
             baseline: { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 },
-            transform: { width: 0, height: 0, rotation: 0 },
+            // FIXED: Initialize to null so the photo editor pipeline knows to use the actual image file sizes
+            transform: { width: null, height: null, rotation: 0 },
             
             // Default structural tracking configuration for the filter engine tool
             filter: {
@@ -166,6 +167,15 @@ class MasterHistoryManager {
         
         if (window.BaselineFilterHistory && typeof window.BaselineFilterHistory.syncState === 'function') {
             window.BaselineFilterHistory.syncState(currentSnapshot.filter);
+        }
+
+        // NEW FIX: If a historic step contains true tracking resolutions, sync back to active state variables
+        if (currentSnapshot.transform && currentSnapshot.transform.width) {
+            if (window.imgState) {
+                window.imgState.width = currentSnapshot.transform.width;
+                window.imgState.height = currentSnapshot.transform.height;
+                window.imgState.rotation = currentSnapshot.transform.rotation || 0;
+            }
         }
     }
 
