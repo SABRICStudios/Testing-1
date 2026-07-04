@@ -8,49 +8,19 @@ body{
     height: 100vh;
 }
 
-.canvas {
+.canvas{
     width: 90%;
     height: calc(100vh - 17vh);
-    margin: 20px auto; 
+    margin: auto;
+    margin-top: 7%;
+    margin-bottom: 20px;
+    padding-bottom: 0%;
     background-color: #ffffff;
-    position: relative;
-    
-    /* 1. UPDATED: Changed from 'hidden' to 'auto' to allow native scrolling */
-    overflow: auto; 
-    
-    display: flex;
-    justify-content: center;
-    align-items: center;
-
-    /* 2. NEW: Show the open hand cursor to indicate it's draggable */
-    cursor: grab;
-
-    /* 3. NEW: Hide scrollbars for Firefox, IE, and Edge */
-    -ms-overflow-style: none;  
-    scrollbar-width: none;  
 }
-
-/* 4. NEW: Hide scrollbars for Chrome, Safari, and Opera */
-.canvas::-webkit-scrollbar {
-    display: none;
-}
-
-/* 5. NEW: The active state class that our JavaScript will toggle on click */
-.canvas.is-dragging {
-    cursor: grabbing;
-}
-
 #editorCanvas {
     display: block;
-    max-width: 100%;
-    max-height: 60vh;
-    object-fit: contain;
-    border-radius: 4px;
-    
-    /* 6. UPDATED: Changed from 'crosshair' to 'inherit'. 
-       This ensures the grab/grabbing cursor from the .canvas wrapper 
-       actually shows up when the user hovers over the photo itself. */
-    cursor: inherit; 
+    width: 100%;
+    height: 100%;
 }
 
 .toolbar{
