@@ -45,39 +45,52 @@ init() {
     dragStart(e) {
         this.isDragging = true;
         this.toolbar.classList.add('dragging');
-        const pageX = e.type.includes('touch') ? e.touches[0].pageX : e.pageX;
-        // Cancel active kinetic animations smoothly on click down
-        if (this.rafId) cancelAnimationFrame(this.rafId);
 
-        this.startX = e.pageX - this.toolbar.offsetLeft;
+        // Safely get the correct X coordinate for both Mobile and PC
+        const pageX = e.type.includes('touch') ? e.touches[0].pageX : e.pageX;
+
+        this.startX = pageX;
         this.scrollStartX = this.toolbar.scrollLeft;
 
-        // Reset tracking mechanics
-        this.lastMoveX = e.pageX;
-        this.lastMoveTime = performance.now();
+        // Reset Kinetic Momentum states
+        if (this.rafId) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+        }
+        
         this.velocityX = 0;
+        this.lastMoveTime = performance.now();
+        // CRITICAL: We must use the safe pageX here too, not e.pageX
+        this.lastMoveX = pageX; 
     }
 
     dragMove(e) {
         if (!this.isDragging) return;
-        e.preventDefault();
-
-        const currentX = e.pageX - this.toolbar.offsetLeft;
-        const deltaX = (currentX - this.startX) * 1.2; // 1.2x Responsiveness scalar
-        const pageX = e.type.includes('touch') ? e.touches[0].pageX : e.pageX;
-        this.toolbar.scrollLeft = this.scrollStartX - deltaX;
-
-        // Calculate Real-time Instantaneous Velocity Matrix
-        const now = performance.now();
-        const elapsed = now - this.lastMoveTime;
         
-        if (elapsed > 0) {
-            const currentPositionX = e.pageX;
-            // Pixels covered per millisecond
-            this.velocityX = (currentPositionX - this.lastMoveX) / elapsed;
-            this.lastMoveX = currentPositionX;
-            this.lastMoveTime = now;
+        // Prevent native page scrolling/pull-to-refresh while dragging
+        if (e.cancelable) {
+            e.preventDefault(); 
         }
+
+        // Safely get the correct X coordinate
+        const pageX = e.type.includes('touch') ? e.touches[0].pageX : e.pageX;
+
+        // Calculate scroll displacement
+        const walk = (pageX - this.startX);
+        this.toolbar.scrollLeft = this.scrollStartX - walk;
+
+        // Calculate velocity for kinetic release
+        const now = performance.now();
+        const dt = now - this.lastMoveTime;
+        const dx = pageX - this.lastMoveX;
+
+        // Avoid divide-by-zero errors if events fire faster than 1ms
+        if (dt > 0) {
+            this.velocityX = dx / dt;
+        }
+        
+        this.lastMoveX = pageX;
+        this.lastMoveTime = now;
     }
 
     dragEnd() {
