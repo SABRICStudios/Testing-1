@@ -111,6 +111,7 @@ applyEffectsPipeline: () => {
                 // Draw normal unrotated image texture onto processing canvas
                 ctx.drawImage(originalImg, 0, 0, targetWidth, targetHeight);
 
+                
                 let imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
 
                 // --- LINEAR COEFFICIENT CALCULATIONS ---
@@ -193,15 +194,17 @@ applyEffectsPipeline: () => {
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
 
-                // --- ADD THIS BLOCK: APPLY FILTER ENGINE ---
                 if (configMatrix.filter && configMatrix.filter.type !== 'none' && window.FilterEngine) {
-                    imgData = window.FilterEngine.process(
-                        imgData, 
-                        configMatrix.filter.type, 
-                        configMatrix.filter.intensity
-                    );
+                    imgData = window.FilterEngine.process(imgData, configMatrix.filter.type, configMatrix.filter.intensity);
                 }
-                // -------------------------------------------
+
+                // 1. You run the details engine here and save it to imgData...
+                if (configMatrix.details && window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
+                    imgData = window.DetailsEngine.process(imgData, configMatrix.details);
+                }
+
+
+                // ================================================
 
                 if (baseline.sharpen !== 0) {
                     imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);

@@ -17,6 +17,16 @@ class MasterHistoryManager {
             filter: {
                 type: 'none',
                 intensity: 100
+            },
+            details: {
+                sharpenAmount: 0,
+                sharpenRadius: 1.0,
+                sharpenThreshold: 25,
+                sharpenMasking: 0,
+                noiseLuminance: 0,
+                noiseLumDetail: 50,
+                noiseColor: 0,
+                noiseColorDetail: 50
             }
         };
 
@@ -93,6 +103,9 @@ class MasterHistoryManager {
         } else if (payload.type === 'filter') {
             baseState.filter = { ...baseState.filter, ...payload.values };
         }
+         else if (payload.type === 'details') { // FIX: Handle details payload commit
+            baseState.details = { ...baseState.details, ...payload.values };
+        }
 
         this.historyStack.push({
             label: toolLabel,
@@ -165,10 +178,18 @@ class MasterHistoryManager {
             window.BaselineHistory.syncState(currentSnapshot.baseline);
         }
         
+        // Inside history_manager.js -> syncSubManagersToCurrentCheckpoint()
         if (window.BaselineFilterHistory && typeof window.BaselineFilterHistory.syncState === 'function') {
             window.BaselineFilterHistory.syncState(currentSnapshot.filter);
         }
 
+        // FIX: Sync historic details state back to active manager UI on undo/redo
+        if (currentSnapshot.details && window.DetailsManager) {
+            window.DetailsManager.activeState = { ...currentSnapshot.details };
+            if (typeof window.DetailsManager.syncUIFromState === 'function') {
+                window.DetailsManager.syncUIFromState();
+            }
+        }
         // NEW FIX: If a historic step contains true tracking resolutions, sync back to active state variables
         if (currentSnapshot.transform && currentSnapshot.transform.width) {
             if (window.imgState) {
