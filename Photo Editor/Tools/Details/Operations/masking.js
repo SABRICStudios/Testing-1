@@ -8,34 +8,34 @@ window.DetailsMasking = {
         const width = imgData.width;
         const height = imgData.height;
         const src = imgData.data;
+        
+        // Uint8 array is perfect and cheap on the CPU stack memory
         const mask = new Uint8ClampedArray(width * height);
         
-        // Map slider values to match Lightroom curve threshold configurations
-        const baseCutoff = (maskingValue / 100) * 80;
+        // Map slider values smoothly to contrast cutoff gates
+        const baseCutoff = (maskingValue / 100) * 120;
 
-        for (let y = 1; y < height - 1; y++) {
-            for (let x = 1; x < width - 1; x++) {
+        for (let y = 0; y < height - 1; y++) {
+            for (let x = 0; x < width - 1; x++) {
                 const idx = (y * width + x) * 4;
+                const rightIdx = idx + 4;
+                const downIdx = ((y + 1) * width + x) * 4;
                 
-                // Read luminance distribution
-                const c = (src[idx] + src[idx + 1] + src[idx + 2]) / 3;
-                const r = (src[idx + 4] + src[idx + 5] + src[idx + 6]) / 3;
-                const b = (src[(y + 1) * width + x * 4] + src[(y + 1) * width + x * 4 + 1] + src[(y + 1) * width + x * 4 + 2]) / 3;
+                // Quick grayscale brightness calculation
+                const currentLuma = (src[idx] + src[idx + 1] + src[idx + 2]) / 3;
+                const rightLuma   = (src[rightIdx] + src[rightIdx + 1] + src[rightIdx + 2]) / 3;
+                const downLuma    = (src[downIdx] + src[downIdx + 1] + src[downIdx + 2]) / 3;
 
-                // Fast spatial gradient approximation
-                const dx = Math.abs(c - r);
-                const dy = Math.abs(c - b);
+                // Fast spatial gradient approximation (Manhattan distance calculation)
+                const dx = Math.abs(currentLuma - rightLuma);
+                const dy = Math.abs(currentLuma - downLuma);
                 const magnitude = dx + dy;
 
-                if (magnitude < baseCutoff) {
-                    mask[y * width + x] = 0;
-                } else {
-                    // Smooth-step interpolation to completely eliminate jagged lines
-                    const factor = (magnitude - baseCutoff) / (100 - baseCutoff + 0.001);
-                    mask[y * width + x] = Math.min(255, factor * 255 * 1.5);
-                }
+                // If contrast variation is lower than slider threshold, drop it out (mask = 0)
+                mask[y * width + x] = magnitude < baseCutoff ? 0 : 1;
             }
         }
+
         return mask;
     }
 };

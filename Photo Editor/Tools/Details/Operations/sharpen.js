@@ -1,6 +1,6 @@
 /**
  * Tools/Details/OPERATIONS/sharpen.js
- * Lightroom-Grade Gaussian Unsharp Masking Engine
+ * High-Performance Smooth CPU Unsharp Masking Engine
  */
 
 window.DetailsSharpen = {
@@ -13,98 +13,121 @@ window.DetailsSharpen = {
         const dst = output.data;
 
         const amount = settings.sharpenAmount / 100; 
-        const radius = settings.sharpenRadius;
+        const radius = Math.max(1, Math.round(settings.sharpenRadius)); // Clamp radius for fast integer strides
         const threshold = settings.sharpenThreshold;
 
-        // Step A: Create a smooth Gaussian blurred buffer instead of a blocky box blur
-        const blurredData = new Uint8ClampedArray(width * height * 4);
-        this.gaussianBlur(src, blurredData, width, height, radius);
+        // Step A: Allocate a fast blurred buffer matrix
+        const blurredData = new Uint8ClampedArray(src.length);
+        this.fastBlur(src, blurredData, width, height, radius);
 
-        // Step B: Calculate differential frequencies
+        // Step B: Calculate differential high frequencies and apply sharpening
         for (let i = 0; i < src.length; i += 4) {
+            // Alpha channel bypasses modification
+            dst[i + 3] = src[i + 3];
+
+            // Check edge mask if it's currently generated and active
+            if (edgeMaskArray && edgeMaskArray[i / 4] === 0) {
+                dst[i]     = src[i];
+                dst[i + 1] = src[i + 1];
+                dst[i + 2] = src[i + 2];
+                continue;
+            }
+
             for (let c = 0; c < 3; c++) {
                 const origVal = src[i + c];
                 const blurVal = blurredData[i + c];
                 const diff = origVal - blurVal;
 
                 // Threshold gate to eliminate flat noise amplification
-                if (Math.abs(diff) < threshold) continue;
-
-                let sharpenEffect = diff * amount;
-
-                // Restrict using our edge isolation map
-                if (edgeMaskArray) {
-                    const pixelIndex = i / 4;
-                    const maskWeight = edgeMaskArray[pixelIndex] / 255;
-                    sharpenEffect *= maskWeight;
+                if (Math.abs(diff) < threshold) {
+                    dst[i + c] = origVal;
+                    continue;
                 }
 
-                const finalColor = origVal + sharpenEffect;
-                dst[i + c] = Math.max(0, Math.min(255, finalColor));
+                // Apply sharp boost adjustment
+                let sharpened = origVal + diff * amount;
+                
+                // Keep values clamped within safe 8-bit RGB limits
+                dst[i + c] = sharpened > 255 ? 255 : (sharpened < 0 ? 0 : sharpened);
             }
         }
+
         return output;
     },
 
-    // Dual-pass separable Gaussian blur formula
-    gaussianBlur(src, dst, w, h, radius) {
-        const sigma = radius;
-        const kernelSize = Math.max(3, Math.ceil(sigma * 3) * 2 + 1);
-        const halfKernel = Math.floor(kernelSize / 2);
+    /**
+     * Highly optimized CPU Box Blur approximation pass
+     */
+    fastBlur(src, dst, w, h, radius) {
+        // Simple linear copy to begin
+        dst.set(src);
         
-        // Generate Gaussian distribution curve coefficients
-        const kernel = new Float32Array(kernelSize);
-        let sum = 0;
-        for (let i = -halfKernel; i <= halfKernel; i++) {
-            const g = Math.exp(-(i * i) / (2 * sigma * sigma));
-            kernel[i + halfKernel] = g;
-            sum += g;
-        }
-        for (let i = 0; i < kernelSize; i++) {
-            kernel[i] /= sum;
-        }
+        // Accumulator buffers for moving window
+        const temp = new Uint8ClampedArray(src.length);
 
-        const temp = new Float32Array(w * h * 4);
-
-        // Pass 1: Horizontal Blur
+        // Pass 1: Horizontal Pass
         for (let y = 0; y < h; y++) {
+            let rSum = 0, gSum = 0, bSum = 0, count = 0;
+            
+            // Initialize window
+            for (let k = -radius; k <= radius; k++) {
+                const nx = Math.min(w - 1, Math.max(0, k));
+                const idx = (y * w + nx) * 4;
+                rSum += src[idx];
+                gSum += src[idx + 1];
+                bSum += src[idx + 2];
+                count++;
+            }
+
             for (let x = 0; x < w; x++) {
-                let r = 0, g = 0, b = 0, a = 0;
-                for (let k = -halfKernel; k <= halfKernel; k++) {
-                    const nx = Math.min(w - 1, Math.max(0, x + k));
-                    const idx = (y * w + nx) * 4;
-                    const weight = kernel[k + halfKernel];
-                    r += src[idx] * weight;
-                    g += src[idx + 1] * weight;
-                    b += src[idx + 2] * weight;
-                    a += src[idx + 3] * weight;
-                }
                 const outIdx = (y * w + x) * 4;
-                temp[outIdx] = r;
-                temp[outIdx + 1] = g;
-                temp[outIdx + 2] = b;
-                temp[outIdx + 3] = a;
+                temp[outIdx]     = rSum / count;
+                temp[outIdx + 1] = gSum / count;
+                temp[outIdx + 2] = bSum / count;
+
+                // Slide window forward safely
+                const oldX = Math.min(w - 1, Math.max(0, x - radius));
+                const newX = Math.min(w - 1, Math.max(0, x + radius + 1));
+                
+                const oldIdx = (y * w + oldX) * 4;
+                const newIdx = (y * w + newX) * 4;
+
+                rSum += src[newIdx] - src[oldIdx];
+                gSum += src[newIdx + 1] - src[oldIdx + 1];
+                bSum += src[newIdx + 2] - src[oldIdx + 2];
             }
         }
 
-        // Pass 2: Vertical Blur
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                let r = 0, g = 0, b = 0, a = 0;
-                for (let k = -halfKernel; k <= halfKernel; k++) {
-                    const ny = Math.min(h - 1, Math.max(0, y + k));
-                    const idx = (ny * w + x) * 4;
-                    const weight = kernel[k + halfKernel];
-                    r += temp[idx] * weight;
-                    g += temp[idx + 1] * weight;
-                    b += temp[idx + 2] * weight;
-                    a += temp[idx + 3] * weight;
-                }
+        // Pass 2: Vertical Pass
+        for (let x = 0; x < w; x++) {
+            let rSum = 0, gSum = 0, bSum = 0, count = 0;
+
+            // Initialize window
+            for (let k = -radius; k <= radius; k++) {
+                const ny = Math.min(h - 1, Math.max(0, k));
+                const idx = (ny * w + x) * 4;
+                rSum += temp[idx];
+                gSum += temp[idx + 1];
+                bSum += temp[idx + 2];
+                count++;
+            }
+
+            for (let y = 0; y < h; y++) {
                 const outIdx = (y * w + x) * 4;
-                dst[outIdx] = r;
-                dst[outIdx + 1] = g;
-                dst[outIdx + 2] = b;
-                dst[outIdx + 3] = a;
+                dst[outIdx]     = rSum / count;
+                dst[outIdx + 1] = gSum / count;
+                dst[outIdx + 2] = bSum / count;
+
+                // Slide window down safely
+                const oldY = Math.min(h - 1, Math.max(0, y - radius));
+                const newY = Math.min(h - 1, Math.max(0, y + radius + 1));
+
+                const oldIdx = (oldY * w + x) * 4;
+                const newIdx = (newY * w + x) * 4;
+
+                rSum += temp[newIdx] - temp[oldIdx];
+                gSum += temp[newIdx + 1] - temp[oldIdx + 1];
+                bSum += temp[newIdx + 2] - temp[oldIdx + 2];
             }
         }
     }

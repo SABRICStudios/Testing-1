@@ -1,116 +1,86 @@
 /**
  * Tools/Details/OPERATIONS/noise_reduction.js
- * Multi-Pass Edge-Preserved Smart Denoise Engine for "Visuals"
+ * High-Performance CPU Bilateral Filter for Luminance Denoising (Edge-Preserving)
  */
 
 window.DetailsLumaDenoise = {
-    apply(imgData, lumaAmount, lumaDetail) {
-        const width = imgData.width;
-        const height = imgData.height;
-        const src = imgData.data;
-        
-        // Create an intermediate buffer to hold processing stages
-        let workingData = new ImageData(new Uint8ClampedArray(src), width, height);
-        
-        const strength = lumaAmount / 100;
-        // Low detail = high edge threshold (blurs larger artifacts); High detail = tight threshold
-        const edgeThreshold = (101 - lumaDetail) * 0.6; 
-
-        // Scale loop iterations dynamically based on strength to handle heavy grain
-        const passes = lumaAmount > 70 ? 3 : (lumaAmount > 30 ? 2 : 1);
-
-        // Run sequential smart-blending passes to mimic a massive processing radius safely
-        for (let p = 0; p < passes; p++) {
-            workingData = this._executeSmartBlurPass(workingData, edgeThreshold, strength);
-        }
-
-        return workingData;
-    },
-
-    /**
-     * Executes a single horizontal & vertical edge-aware filtering sweep
-     */
-    _executeSmartBlurPass(imgData, threshold, strength) {
+    apply(imgData, noiseLuminance, noiseLumDetail) { // Match incoming parameters
         const width = imgData.width;
         const height = imgData.height;
         const src = imgData.data;
         const output = new ImageData(new Uint8ClampedArray(src), width, height);
         const dst = output.data;
 
-        // Pass 1: Horizontal Smart Sweep
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const idx = (y * width + x) * 4;
-                
-                let rSum = src[idx], gSum = src[idx + 1], bSum = src[idx + 2];
-                let totalWeight = 1.0;
+        // Map parameter names to what the pipeline passes
+        const strength = noiseLuminance / 100;
+        const radius = 2; 
+        
+        const spatialSigma = 2.0;
+        const rangeSigma = 10.0 + (noiseLumDetail / 100) * 40.0;
 
-                const cLuma = (rSum + gSum + bSum) / 3;
+        // --- PERFORMANCE OPTIMIZATION: Precompute Range Exp Lookup Table ---
+        const expTable = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            expTable[i] = Math.exp(-(i * i) / (2 * rangeSigma * rangeSigma));
+        }
 
-                // Sample immediate left and right neighbors
-                const sidePixels = [-2, -1, 1, 2];
-                for (let k = 0; k < sidePixels.length; k++) {
-                    const nx = x + sidePixels[k];
-                    if (nx >= 0 && nx < width) {
-                        const nIdx = (y * width + nx) * 4;
-                        const nR = src[nIdx];
-                        const nG = src[nIdx + 1];
-                        const nB = src[nIdx + 2];
-                        const nLuma = (nR + nG + nB) / 3;
-
-                        // Check if the neighbor is an edge or just a grain speckle
-                        if (Math.abs(cLuma - nLuma) < threshold) {
-                            rSum += nR;
-                            gSum += nG;
-                            bSum += nB;
-                            totalWeight += 1.0;
-                        }
-                    }
-                }
-
-                const pixelIndex = (y * width + x) * 4;
-                dst[pixelIndex]     = src[pixelIndex] * (1 - strength) + (rSum / totalWeight) * strength;
-                dst[pixelIndex + 1] = src[pixelIndex + 1] * (1 - strength) + (gSum / totalWeight) * strength;
-                dst[pixelIndex + 2] = src[pixelIndex + 2] * (1 - strength) + (bSum / totalWeight) * strength;
+        // --- PERFORMANCE OPTIMIZATION: Precompute Spatial Weights ---
+        const spatialWeights = new Float32Array((radius * 2 + 1) * (radius * 2 + 1));
+        for (let ky = -radius; ky <= radius; ky++) {
+            for (let kx = -radius; kx <= radius; kx++) {
+                const sIdx = (ky + radius) * (radius * 2 + 1) + (kx + radius);
+                spatialWeights[sIdx] = Math.exp(-(kx * kx + ky * ky) / (2 * spatialSigma * spatialSigma));
             }
         }
 
-        // Clone current progress to feed into the vertical sweep
-        const intermediate = new Uint8ClampedArray(dst);
-
-        // Pass 2: Vertical Smart Sweep
+        // Main Image Matrix processing loop
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const idx = (y * width + x) * 4;
                 
-                let rSum = intermediate[idx], gSum = intermediate[idx + 1], bSum = intermediate[idx + 2];
-                let totalWeight = 1.0;
+                let rSum = 0, gSum = 0, bSum = 0, wSum = 0;
+                const rCur = src[idx];
+                const gCur = src[idx + 1];
+                const bCur = src[idx + 2];
 
-                const cLuma = (rSum + gSum + bSum) / 3;
+                // Preserve alpha channel completely
+                dst[idx + 3] = src[idx + 3];
 
-                // Sample immediate top and bottom neighbors
-                const verticalPixels = [-2, -1, 1, 2];
-                for (let k = 0; k < verticalPixels.length; k++) {
-                    const ny = y + verticalPixels[k];
-                    if (ny >= 0 && ny < height) {
-                        const nIdx = (ny * width + x) * 4;
-                        const nR = intermediate[nIdx];
-                        const nG = intermediate[nIdx + 1];
-                        const nB = intermediate[nIdx + 2];
-                        const nLuma = (nR + nG + nB) / 3;
+                for (let ky = -radius; ky <= radius; ky++) {
+                    const ny = Math.min(height - 1, Math.max(0, y + ky));
+                    const yStride = ny * width;
 
-                        if (Math.abs(cLuma - nLuma) < threshold) {
-                            rSum += nR;
-                            gSum += nG;
-                            bSum += nB;
-                            totalWeight += 1.0;
-                        }
+                    for (let kx = -radius; kx <= radius; kx++) {
+                        const nx = Math.min(width - 1, Math.max(0, x + kx));
+                        const nIdx = (yStride + nx) * 4;
+
+                        const rN = src[nIdx];
+                        const gN = src[nIdx + 1];
+                        const bN = src[nIdx + 2];
+
+                        // Fast absolute average value for structural intensity delta calculation
+                        const diff = Math.abs(((rCur + gCur + bCur) - (rN + gN + bN)) / 3);
+                        
+                        // Fetch precomputed weights
+                        const rWeight = expTable[Math.min(255, Math.floor(diff))];
+                        const sIdx = (ky + radius) * (radius * 2 + 1) + (kx + radius);
+                        const sWeight = spatialWeights[sIdx];
+                        
+                        const weight = sWeight * rWeight;
+
+                        rSum += rN * weight;
+                        gSum += gN * weight;
+                        bSum += bN * weight;
+                        wSum += weight;
                     }
                 }
 
-                dst[idx]     = intermediate[idx] * (1 - strength) + (rSum / totalWeight) * strength;
-                dst[idx + 1] = intermediate[idx + 1] * (1 - strength) + (gSum / totalWeight) * strength;
-                dst[idx + 2] = intermediate[idx + 2] * (1 - strength) + (bSum / totalWeight) * strength;
+                // Smoothly blend filtered noise reduction back based on slider strength
+                if (wSum > 0) {
+                    dst[idx]     = rCur + ((rSum / wSum) - rCur) * strength;
+                    dst[idx + 1] = gCur + ((gSum / wSum) - gCur) * strength;
+                    dst[idx + 2] = bCur + ((bSum / wSum) - bCur) * strength;
+                }
             }
         }
 
