@@ -9,7 +9,7 @@ const BlurManager = {
     init() {
         this.screenCanvas = document.getElementById('editorCanvas');
         if (!this.screenCanvas) return;
-        this.screenCtx = this.screenCanvas.getContext('2d');
+        this.screenCtx = this.screenCanvas.getContext('2d', { willReadFrequently: true }); 
 
         this.initDOM();
         this.initEvents();

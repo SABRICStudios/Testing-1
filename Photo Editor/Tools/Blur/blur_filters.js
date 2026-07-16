@@ -1,16 +1,16 @@
 // Tools/Blur/blur_filters.js
 
 const BlurFilters = {
-    /**
-     * Pure CPU Proportional Sliding-Window Box Blur
-     * Optimized for high thread performance on mobile devices & Android WebView.
-     * Overloaded to handle both 2-argument and 3-argument pipeline calls safely.
-     */
+    // Keep a lightweight offscreen scratchpad cached to avoid GC spikes
+    _proxyCanvas: null,
+    _proxyCtx: null,
+    _fullCanvas: null,
+    _fullCtx: null,
+
     applyGaussian(srcImageData, arg2, arg3) {
         let radius;
         let canvasBuffer = null;
 
-        // Detect call signature: (srcImageData, canvasBuffer, radius) vs (srcImageData, radius)
         if (arg3 !== undefined) {
             canvasBuffer = arg2;
             radius = arg3;
@@ -22,10 +22,69 @@ const BlurFilters = {
 
         const w = srcImageData.width;
         const h = srcImageData.height;
-        
+        const isScrubbing = window.CanvasEditor && window.CanvasEditor.isScrubbing;
+
+        // -------------------------------------------------------------
+        // OPTIMIZATION: DOWNSAMPLE & UPSCALE DURING ACTIVE SCRUBBING
+        // -------------------------------------------------------------
+        if (isScrubbing && (w > 300 || h > 300)) {
+            // 1. Calculate a tiny proxy size (e.g., max 200px)
+            const proxyMax = 200;
+            const scale = proxyMax / Math.max(w, h);
+            const pw = Math.round(w * scale);
+            const ph = Math.round(h * scale);
+            const scaledRadius = Math.max(1, Math.round(radius * scale));
+
+            // 2. Initialize or resize our cached scratchpad canvases
+            if (!this._proxyCanvas) {
+                this._proxyCanvas = document.createElement('canvas');
+                this._proxyCtx = this._proxyCanvas.getContext('2d', { willReadFrequently: true });
+                this._fullCanvas = document.createElement('canvas');
+                this._fullCtx = this._fullCanvas.getContext('2d');
+            }
+            
+            this._proxyCanvas.width = pw;
+            this._proxyCanvas.height = ph;
+            this._fullCanvas.width = w;
+            this._fullCanvas.height = h;
+
+            // 3. Draw full imageData onto full canvas, then scale down onto proxy canvas
+            const tempImgData = new ImageData(new Uint8ClampedArray(srcImageData.data), w, h);
+            this._fullCtx.putImageData(tempImgData, 0, 0);
+            
+            this._proxyCtx.clearRect(0, 0, pw, ph);
+            this._proxyCtx.drawImage(this._fullCanvas, 0, 0, pw, ph);
+
+            // 4. Extract and blur the tiny image (CPU math is incredibly fast on 200px!)
+            const proxyData = this._proxyCtx.getImageData(0, 0, pw, ph);
+            const firstPass = new Uint8ClampedArray(proxyData.data.length);
+            const secondPass = new Uint8ClampedArray(proxyData.data.length);
+            
+            this._boxBlurPass(proxyData.data, firstPass, pw, ph, scaledRadius, true);
+            this._boxBlurPass(firstPass, secondPass, pw, ph, scaledRadius, false);
+
+            const blurredProxyData = new ImageData(secondPass, pw, ph);
+            this._proxyCtx.putImageData(blurredProxyData, 0, 0);
+
+            // 5. Stretch the blurred tiny image back to full size on the destination canvas
+            if (canvasBuffer && typeof canvasBuffer.getContext === 'function') {
+                const ctx = canvasBuffer.getContext('2d');
+                ctx.clearRect(0, 0, w, h);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'medium'; // Smooths out pixelation artifacts
+                ctx.drawImage(this._proxyCanvas, 0, 0, w, h);
+                
+                // Return high-res canvas image data so the rest of the chain has correct dimensions
+                return ctx.getImageData(0, 0, w, h);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // STANDARD PATH: Runs only once when touch ends / confirms
+        // -------------------------------------------------------------
         let optimizedRadius = radius; 
         if (Math.max(w, h) > 2500) {
-            optimizedRadius = Math.min(radius, 30); // Generous ceiling for high-res screens
+            optimizedRadius = Math.min(radius, 30);
         }
 
         const firstPassBuffer = new Uint8ClampedArray(srcImageData.data.length);
@@ -37,7 +96,6 @@ const BlurFilters = {
         
         const blurredData = new ImageData(secondPassBuffer, w, h);
 
-        // If a canvas buffer was supplied, commit the pixels directly to it
         if (canvasBuffer && typeof canvasBuffer.getContext === 'function') {
             const ctx = canvasBuffer.getContext('2d');
             ctx.putImageData(blurredData, 0, 0);
@@ -45,6 +103,9 @@ const BlurFilters = {
         
         return blurredData;
     },
+    
+    
+
 
     _boxBlurPass(src, dst, w, h, radius, isHorizontal) {
         const r = Math.min(radius, Math.floor((isHorizontal ? w : h) / 2) - 1);
