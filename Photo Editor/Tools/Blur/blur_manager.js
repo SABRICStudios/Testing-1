@@ -25,7 +25,7 @@ const BlurManager = {
         this.discardGaussian = document.getElementById('discardGaussianBlurBtn');
     },
 
-    initEvents() {
+initEvents() {
         if (this.blurBtn) {
             this.blurBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -33,12 +33,21 @@ const BlurManager = {
             });
         }
 
+        // Shared slider handler that works on mobile touch
+        const handleSliderChange = (e) => {
+            const key = e.target.id === 'gaussianSlider' ? 'gaussian' : 'radial';
+            if (window.HistoryManager && typeof window.HistoryManager.updateValue === 'function') {
+                window.HistoryManager.updateValue(key, e.target.value);
+            }
+            this.processLiveBlur();
+        };
+
         if (this.gaussianSlider) {
-            this.gaussianSlider.addEventListener('input', () => this.processLiveBlur());
+            this.gaussianSlider.addEventListener('input', handleSliderChange);
         }
 
         if (this.radialSlider) {
-            this.radialSlider.addEventListener('input', () => this.processLiveBlur());
+            this.radialSlider.addEventListener('input', handleSliderChange);
         }
 
         if (this.confirmGaussian) {
