@@ -8,7 +8,7 @@ window.imgState = {
     height: 0,
     isSelected: false, 
     handleSize: 10,
-    maintainAspectRatio: false // Added explicit toggle state tracking natively
+    maintainAspectRatio: false
 };
 
 window.canvasRenderPending = false;
@@ -26,44 +26,30 @@ window.CanvasEditor = {
         if (!window.imgState.img) return cleanCanvas;
         cleanCanvas.width = window.imgState.img.width;
         cleanCanvas.height = window.imgState.img.height;
-        // --- NEW FIXED RENDER SEGMENT ---
-                const ctx = canvas.getContext('2d');
-                
-                // 1. Sync structural display dimensions with its layout container bounds
-                const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
-                const displayWidth = canvasArea ? (canvasArea.clientWidth || 800) : 800;
-                const displayHeight = canvasArea ? (canvasArea.clientHeight || 600) : 600;
-                
-                if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-                    canvas.width = displayWidth;
-                    canvas.height = displayHeight;
-                }
-
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                // 2. Render using the stored centered bounding properties
-                const state = window.imgState;
-                ctx.save();
-                
-                // Move origin point to the center of the image area for stable transformations
-                ctx.translate(state.x + state.width / 2, state.y + state.height / 2);
-                if (state.rotation) {
-                    ctx.rotate((state.rotation * Math.PI) / 180);
-                }
-                
-                // Draw image centered on origin transformation point
-                ctx.drawImage(
-                    window.imgState.imageXCanvas, 
-                    -state.width / 2, 
-                    -state.height / 2, 
-                    state.width, 
-                    state.height
-                );
-                
-                ctx.restore();
+        
+        // FIXED: Corrected reference container context target shell variables
+        const ctx = cleanCanvas.getContext('2d');
+        const state = window.imgState;
+        
+        ctx.save();
+        ctx.translate(state.x + state.width / 2, state.y + state.height / 2);
+        if (state.rotation) {
+            ctx.rotate((state.rotation * Math.PI) / 180);
+        }
+        
+        ctx.drawImage(
+            window.imgState.imageXCanvas, 
+            -state.width / 2, 
+            -state.height / 2, 
+            state.width, 
+            state.height
+        );
+        
+        ctx.restore();
+        return cleanCanvas;
     },
 
-applyEffectsPipeline: () => {
+    applyEffectsPipeline: () => {
         if (window.canvasRenderPending) return;
         if (!window.imgState.img || !window.imgState.imageXCanvas) return;
 
@@ -83,38 +69,34 @@ applyEffectsPipeline: () => {
                 let baseHeight = parseInt(window.imgState.height, 10) || parseInt(transformState.height, 10) || originalImg.naturalHeight || originalImg.height;
                 const degrees = window.imgState.rotation !== undefined ? parseFloat(window.imgState.rotation) : (parseFloat(transformState.rotation) || 0);
 
-                // PERFORMANCE ENGINE: PREVIEW DOWNSAMPLING
-                const MAX_PREVIEW_DIM = 1024;
-                let scaleFactor = 1;
-                if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
-                    scaleFactor = MAX_PREVIEW_DIM / Math.max(baseWidth, baseHeight);
-                }
-
-                const targetWidth = window.CanvasEditor.isScrubbing 
-                    ? Math.round(baseWidth * scaleFactor) 
-                    : baseWidth;
-
-                const targetHeight = window.CanvasEditor.isScrubbing 
-                    ? Math.round(baseHeight * scaleFactor) 
-                    : baseHeight;
-
-                // Set backing buffer canvas strictly to the straight base dimensions
-                targetCanvas.width = targetWidth;
-                targetCanvas.height = targetHeight;
+                targetCanvas.width = baseWidth;
+                targetCanvas.height = baseHeight;
                 window.imgState.rotation = degrees;
 
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
-
                 ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
                 
-                // Draw normal unrotated image texture onto processing canvas
-                ctx.drawImage(originalImg, 0, 0, targetWidth, targetHeight);
+                // FIXED: Draw image directly into context. Using putImageData right after 
+                // drawing textures causes pixel scaling degradation on downsampled image layers.
+                ctx.drawImage(originalImg, 0, 0, baseWidth, baseHeight);
 
+                let imgData;
+                const MAX_PREVIEW_DIM = 1024;
                 
-                let imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
+                if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
+                    const scaleFactor = MAX_PREVIEW_DIM / Math.max(baseWidth, baseHeight);
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = Math.round(baseWidth * scaleFactor);
+                    tempCanvas.height = Math.round(baseHeight * scaleFactor);
+                    
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.drawImage(originalImg, 0, 0, tempCanvas.width, tempCanvas.height);
+                    imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                } else {
+                    imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
+                }
 
-                // --- LINEAR COEFFICIENT CALCULATIONS ---
                 let scalar = { ...(configMatrix.scalar || { exposure: 0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 }) };
                 let baseline = { ...(configMatrix.baseline || { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 }) };
 
@@ -190,7 +172,7 @@ applyEffectsPipeline: () => {
                     }
 
                     data[i]     = r > 255 ? 255 : (r < 0 ? 0 : r);
-                    data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g);
+                    data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g); 
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
 
@@ -198,15 +180,79 @@ applyEffectsPipeline: () => {
                     imgData = window.FilterEngine.process(imgData, configMatrix.filter.type, configMatrix.filter.intensity);
                 }
 
-                // 1. You run the details engine here and save it to imgData...
                 if (configMatrix.details && window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
                     imgData = window.DetailsEngine.process(imgData, configMatrix.details);
                 }
 
+            // ================================================
+            // FIXED: ROBUST BLUR PROCESSING (LIVE & CONFIRMED)
+            // ================================================
+            // Pull directly from DOM elements first for perfect real-time accuracy, fall back to state matrix
+            const gaussianInput = document.getElementById('gaussianSlider');
+            const radialInput = document.getElementById('radialSlider');
+            
+            const radius = gaussianInput ? parseFloat(gaussianInput.value) : (configMatrix.blur?.gaussian || 0);
+            const intensity = radialInput ? parseInt(radialInput.value, 10) : (configMatrix.blur?.radial || 0);
 
-                // ================================================
+            if (radius > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyGaussian) {
+                if (window.CanvasEditor.isScrubbing) {
+                    const srcWidth = originalImg.naturalWidth || originalImg.width || targetCanvas.width;
+                    const runtimeRadius = Math.max(1, Math.round(radius * (imgData.width / srcWidth)));
+                    imgData = BlurFilters.applyGaussian(imgData, runtimeRadius);
+                } else {
+                    // Apply exact intended radius to full-res buffer on mouse release
+                    imgData = BlurFilters.applyGaussian(imgData, radius);
+                }
+            }
 
-                if (baseline.sharpen !== 0) {
+            if (intensity > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyRadialDepth) {
+                imgData = BlurFilters.applyRadialDepth(imgData, intensity);
+            }
+
+            // --- PLUG DIRECTLY INTO SUBSEQUENT KERNELS WITHOUT REWRITING IMAGE DATA ---
+            if (baseline.sharpen !== 0) {
+                imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
+            }
+
+            if (baseline.clarity !== 0) {
+                imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
+            }
+
+            // --- FINAL CANVAS COMPOSITING PASS ---
+            if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
+                ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+                
+                const tempRenderCanvas = document.createElement('canvas');
+                tempRenderCanvas.width = imgData.width;
+                tempRenderCanvas.height = imgData.height;
+                tempRenderCanvas.getContext('2d').putImageData(imgData, 0, 0);
+                
+                ctx.drawImage(tempRenderCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
+            } else {
+                if (targetCanvas.width !== imgData.width || targetCanvas.height !== imgData.height) {
+                    targetCanvas.width = imgData.width;
+                    targetCanvas.height = imgData.height;
+                }
+                ctx.putImageData(imgData, 0, 0);
+            }
+            // ================================================
+
+                if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
+                    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+                    const tempRenderCanvas = document.createElement('canvas');
+                    tempRenderCanvas.width = imgData.width;
+                    tempRenderCanvas.height = imgData.height;
+                    tempRenderCanvas.getContext('2d').putImageData(imgData, 0, 0);
+                    ctx.drawImage(tempRenderCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
+                } else {
+                    if (targetCanvas.width !== imgData.width || targetCanvas.height !== imgData.height) {
+                        targetCanvas.width = imgData.width;
+                        targetCanvas.height = imgData.height;
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+                }
+
+                if (baseline.vignette !== 0) {
                     imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
                 }
 
@@ -214,14 +260,11 @@ applyEffectsPipeline: () => {
                     imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
                 }
 
-                if (baseline.sharpen !== 0) {
-                    imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
+                // FIXED: Safely verify that operations have not introduced pixel array bounds mismatches
+                if (targetCanvas.width !== imgData.width || targetCanvas.height !== imgData.height) {
+                    targetCanvas.width = imgData.width;
+                    targetCanvas.height = imgData.height;
                 }
-
-                if (baseline.clarity !== 0) {
-                    imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
-                }
-
                 ctx.putImageData(imgData, 0, 0);
 
                 if (baseline.vignette !== 0) {
@@ -268,7 +311,6 @@ applyEffectsPipeline: () => {
         
         const outImgData = window.CanvasEditor._kernelCtxBuffer.createImageData(w, h);
         const dst = outImgData.data;
-
         const strength = (value / 100) * 0.5;
         const kCenter = 1 + 4 * strength; const kEdge = -strength;
 
@@ -347,7 +389,7 @@ applyEffectsPipeline: () => {
         return outImgData;
     },
     
-        redraw: () => {
+    redraw: () => {
         const canvas = document.getElementById('editorCanvas');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -371,22 +413,17 @@ applyEffectsPipeline: () => {
         ctx.imageSmoothingEnabled = !(window.CanvasEditor.isScrubbing && needsDownsample);
         ctx.imageSmoothingQuality = 'high';
 
-        // --- NEW MATRIX ROTATION FOR THE ENTIRE CANVAS ENVELOPE LAYER ---
         ctx.save();
         
-        // Calculate original center point of the drawn asset space
         const centerX = state.x + state.width / 2;
         const centerY = state.y + state.height / 2;
 
-        // Move context matrix to the middle point, rotate, and move back
         ctx.translate(centerX, centerY);
         ctx.rotate((state.rotation * Math.PI) / 180);
         ctx.translate(-centerX, -centerY);
 
-        // Draw the processed layer flat. The canvas matrix will turn it gracefully.
         ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
 
-        // Draw transformation handles inside the rotated matrix layer context so they stay attached to corners!
         if (state.isSelected && window.InteractionManager) {
             ctx.strokeStyle = '#00bcd4'; 
             ctx.lineWidth = 2;
@@ -450,16 +487,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 img.onload = () => {
                     window.imgState.img = img;
                     
-                    // 1. Calculate display viewport boundaries
                     const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
                     const maxDisplayW = canvasArea ? (canvasArea.clientWidth || 800) : 800;
                     const maxDisplayH = canvasArea ? (canvasArea.clientHeight || 600) : 600;
 
-                    // Apply a 10% safety visual padding margin
                     const allowedW = maxDisplayW * 0.9;
                     const allowedH = maxDisplayH * 0.9;
 
-                    // 2. Aspect-ratio containment scale calculation
                     let displayW = img.width;
                     let displayH = img.height;
                     
@@ -472,7 +506,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         displayH = Math.round(displayH * fitScale);
                     }
 
-                    // 3. Assign scaled values and calculate perfect center alignment positions
                     window.imgState.x = Math.round((maxDisplayW - displayW) / 2);
                     window.imgState.y = Math.round((maxDisplayH - displayH) / 2);
                     window.imgState.width = displayW;
@@ -480,7 +513,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     window.imgState.rotation = 0; 
                     window.imgState.isSelected = true;
 
-                    // 4. Initialize structural offscreen backing buffer at source res
                     const offscreen = document.createElement('canvas');
                     offscreen.width = img.width; 
                     offscreen.height = img.height;
@@ -504,7 +536,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Mobile inputs performance tuning
     document.addEventListener("input", (e) => {
         if (e.target && (e.target.type === "range" || e.target.id === "transformWidthInput" || e.target.id === "transformHeightInput")) {
             if (!window.CanvasEditor.isScrubbing) {
@@ -513,12 +544,28 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    document.addEventListener("change", (e) => {
-        if (e.target && (e.target.type === "range" || e.target.id === "transformWidthInput" || e.target.id === "transformHeightInput")) {
+// NEW FIXED: Debounced release listener to prevent high-value click crashes
+let pipelineDebounceTimeout = null;
+
+document.addEventListener("change", (e) => {
+    if (e.target && (e.target.type === "range" || e.target.id === "transformWidthInput" || e.target.id === "transformHeightInput")) {
+        
+        // Clear any pending render calls stacked up by a sudden click action
+        if (pipelineDebounceTimeout) {
+            clearTimeout(pipelineDebounceTimeout);
+        }
+
+        // Delay the heavy full-res render by 40ms to let the UI thread breathe
+        pipelineDebounceTimeout = setTimeout(() => {
             window.CanvasEditor.isScrubbing = false;
+            
+            // Force reset the render loop lock state if it got stuck during the click spike
+            window.canvasRenderPending = false; 
+
             if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
                 window.CanvasEditor.applyEffectsPipeline();
             }
-        }
-    });
+        }, 40); 
+    }
+});
 });

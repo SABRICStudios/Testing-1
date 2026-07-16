@@ -690,58 +690,38 @@
 
 
 
-                               <div id="blurPanel" class="blur-panel" style="display: none;">
-    <div id="blurGallery" class="blur-gallery" style="display: flex; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 16px; padding: 12px 8px; -webkit-overflow-scrolling: touch;">
-        
-        <button type="button" data-target="gaussianSliderControl" class="gallery-item-btn" id="gaussianBlurToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 85px; background: none; border: none; cursor: pointer;">
-            <i class="fa fa-snowflake-o"></i>
-            <span>Gaussian</span>
-        </button>
+<div id="blurPanel" class="blur-panel" style="display: none; padding: 14px; background: #141414; border-radius: 8px; width: 100%; box-sizing: border-box;">
+    
+    <!-- Gaussian Blur Parameters -->
+    <div class="slider-group" id="gaussianSliderControl" style="margin-bottom: 12px; padding: 12px; background: #1a1a1a; border-radius: 6px; width: 100%; box-sizing: border-box;">
+        <label for="gaussianSlider" style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px; font-weight: 500; font-size: 14px;">Gaussian Blur Radius</label>
+        <div class="slider-control" style="display: flex; align-items: center; gap: 10px; width: 100%;">
+            <span class="dark-label" style="color: #888; font-family: sans-serif; font-size: 12px; white-space: nowrap;">Sharp</span>
+            <input type="range" id="gaussianSlider" min="0" max="25" step="0.5" value="0" style="flex: 1; height: 6px; cursor: pointer;">
+            <span class="bright-label" style="color: #888; font-family: sans-serif; font-size: 12px; white-space: nowrap;">Defocused</span>
+        </div>
+    </div>
+    
+    <!-- Radial Blur Parameters -->
+    <div class="slider-group" id="radialSliderControl" style="margin-bottom: 16px; padding: 12px; background: #1a1a1a; border-radius: 6px; width: 100%; box-sizing: border-box;">
+        <label for="radialSlider" style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px; font-weight: 500; font-size: 14px;">Radial Blur Amount</label>
+        <div class="slider-control" style="display: flex; align-items: center; gap: 10px; width: 100%;">
+            <span class="dark-label" style="color: #888; font-family: sans-serif; font-size: 12px; white-space: nowrap;">Center Clear</span>
+            <input type="range" id="radialSlider" min="0" max="50" step="1" value="0" style="flex: 1; height: 6px; cursor: pointer;">
+            <span class="bright-label" style="color: #888; font-family: sans-serif; font-size: 12px; white-space: nowrap;">Spin/Zoom</span>
+        </div>
+    </div>
 
-        <button type="button" data-target="radialSliderControl" class="gallery-item-btn" id="radialBlurToolBtn" style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; width: 85px; background: none; border: none; cursor: pointer;">
-            <i class="fa fa-dot-circle-o"></i>
-            <span>Radial Depth</span>
+    <!-- Action Confirmation Interface Buttons -->
+    <div class="tool-actions" style="display: flex; gap: 10px; width: 100%; box-sizing: border-box;">
+        <button type="button" id="confirmGaussianBlurBtn" style="background: #00adb5; color: white; border: none; padding: 10px 16px; cursor: pointer; border-radius: 4px; font-weight: bold; flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px;">
+            <i class="fa fa-check"></i> Confirm
         </button>
-    </div>
-    
-    <div class="slider-group" id="gaussianSliderControl" style="display: none; padding: 10px; background: #1a1a1a; border-radius: 6px;">
-        <label for="gaussianSlider" style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px;">Gaussian Blur Radius</label>
-        <div class="slider-control" style="display: flex; align-items: center; gap: 10px;">
-            <span class="dark-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Sharp</span>
-            <input type="range" id="gaussianSlider" min="0" max="50" step="0.5" value="0" style="flex: 1; cursor: pointer;">
-            <span class="bright-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Defocused</span>
-        </div>
-        <div class="tool-actions" style="margin-top: 15px; display: flex; gap: 10px;">
-            <button type="button" id="confirmGaussianBlurBtn" style="background: #00adb5; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px; font-weight: bold;">
-                <i class="fa fa-check"></i> Confirm
-            </button>
-            <button type="button" id="discardGaussianBlurBtn" style="background: #333; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px;">
-                <i class="fa fa-times"></i> Discard
-            </button>
-        </div>
-    </div>
-    
-    <div class="slider-group" id="radialSliderControl" style="display: none; padding: 10px; background: #1a1a1a; border-radius: 6px;">
-        <label for="radialSlider" style="color: white; font-family: sans-serif; display: block; margin-bottom: 8px;">Radial Blur Amount</label>
-        <div class="slider-control" style="display: flex; align-items: center; gap: 10px;">
-            <span class="dark-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Center Clear</span>
-            <input type="range" id="radialSlider" min="0" max="100" step="1" value="0" style="flex: 1; cursor: pointer;">
-            <span class="bright-label" style="color: #888; font-family: sans-serif; font-size: 12px;">Spin/Zoom</span>
-        </div>
-        <div class="tool-actions" style="margin-top: 15px; display: flex; gap: 10px;">
-            <button type="button" id="confirmRadialBlurBtn" style="background: #00adb5; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px; font-weight: bold;">
-                <i class="fa fa-check"></i> Confirm
-            </button>
-            <button type="button" id="discardRadialBlurBtn" style="background: #333; color: white; border: none; padding: 6px 14px; cursor: pointer; border-radius: 4px;">
-                <i class="fa fa-times"></i> Discard
-            </button>
-        </div>
+        <button type="button" id="discardGaussianBlurBtn" style="background: #333; color: white; border: none; padding: 10px 16px; cursor: pointer; border-radius: 4px; flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px;">
+            <i class="fa fa-times"></i> Discard
+        </button>
     </div>
 </div>
-
-
-
-
 
 
 
