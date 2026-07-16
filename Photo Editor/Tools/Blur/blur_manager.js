@@ -95,7 +95,7 @@ toggleBlurPanel() {
         }
     },
 
-    startBlurSession() {
+startBlurSession() {
         let workingSource = null;
         if (window.CanvasEditor && typeof window.CanvasEditor.getWorkingImage === 'function') {
             workingSource = window.CanvasEditor.getWorkingImage();
@@ -106,20 +106,25 @@ toggleBlurPanel() {
         
         if (!workingSource) return;
 
-        // Reset UI slider values to defaults
         if (this.gaussianSlider) this.gaussianSlider.value = 0;
         if (this.radialSlider) this.radialSlider.value = 0;
 
-        // Create offscreen buffer canvas for real-time manipulation
+        // FIXED: Downsample the offscreen working canvas for real-time manipulation on Android
+        const MAX_SCRUB_DIM = 800; // Small, ultra-fast proxy size
+        let scale = 1;
+        if (workingSource.width > MAX_SCRUB_DIM || workingSource.height > MAX_SCRUB_DIM) {
+            scale = MAX_SCRUB_DIM / Math.max(workingSource.width, workingSource.height);
+        }
+
         this.toolBufferCanvas = document.createElement('canvas');
-        this.toolBufferCanvas.width = workingSource.width;
-        this.toolBufferCanvas.height = workingSource.height;
+        this.toolBufferCanvas.width = Math.round(workingSource.width * scale);
+        this.toolBufferCanvas.height = Math.round(workingSource.height * scale);
 
-        const bufferCtx = this.toolBufferCanvas.getContext('2d');
-        bufferCtx.drawImage(workingSource, 0, 0);
+        const bufferCtx = this.toolBufferCanvas.getContext('2d', { willReadFrequently: true });
+        bufferCtx.drawImage(workingSource, 0, 0, this.toolBufferCanvas.width, this.toolBufferCanvas.height);
 
-        // Store clean snapshot for non-destructive slider processing
-        this.originalImageData = bufferCtx.getImageData(0, 0, workingSource.width, workingSource.height);
+        // This smaller data makes sliding incredibly fluid!
+        this.originalImageData = bufferCtx.getImageData(0, 0, this.toolBufferCanvas.width, this.toolBufferCanvas.height);
     },
 
     processLiveBlur() {
