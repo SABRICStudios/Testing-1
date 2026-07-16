@@ -3,12 +3,12 @@
 const BlurManager = {
     screenCanvas: null,
     screenCtx: null,
-    toolBufferCanvas: null,  // High-res preview manipulation array buffer
-    originalImageData: null, // Pristine unblurred pixels extracted from original source
-    activeSubTool: null,     // Tracks 'gaussian' or 'radial'
+    toolBufferCanvas: null,  
+    originalImageData: null, 
 
     init() {
         this.screenCanvas = document.getElementById('editorCanvas');
+        if (!this.screenCanvas) return;
         this.screenCtx = this.screenCanvas.getContext('2d');
 
         this.initDOM();
@@ -16,78 +16,92 @@ const BlurManager = {
     },
 
     initDOM() {
-        // Core triggers
+        // Targets your specific button ID and the cleaned panel ID
         this.blurBtn = document.getElementById('blurBtn');
         this.blurPanel = document.getElementById('blurPanel');
-        this.blurGallery = document.getElementById('blurGallery');
-
-        // Sub-tool toggle selectors
-        this.gaussianToolBtn = document.getElementById('gaussianBlurToolBtn');
-        this.radialToolBtn = document.getElementById('radialBlurToolBtn');
-
-        // Controls
-        this.gaussianControl = document.getElementById('gaussianSliderControl');
-        this.radialControl = document.getElementById('radialSliderControl');
         this.gaussianSlider = document.getElementById('gaussianSlider');
         this.radialSlider = document.getElementById('radialSlider');
-
-        // Action operations
         this.confirmGaussian = document.getElementById('confirmGaussianBlurBtn');
         this.discardGaussian = document.getElementById('discardGaussianBlurBtn');
-        this.confirmRadial = document.getElementById('confirmRadialBtn');
-        this.discardRadial = document.getElementById('discardRadialBtn');
     },
 
     initEvents() {
-        // Open Master Tool Layout Panel
         if (this.blurBtn) {
-            this.blurBtn.addEventListener('click', () => this.openBlurPanel());
+            this.blurBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.toggleBlurPanel();
+            });
         }
 
-        // Sub-tool switching selection buttons
-        this.gaussianToolBtn.addEventListener('click', () => this.startSubToolSession('gaussian'));
-        this.radialToolBtn.addEventListener('click', () => this.startSubToolSession('radial'));
+        if (this.gaussianSlider) {
+            this.gaussianSlider.addEventListener('input', () => this.processLiveBlur());
+        }
 
-        // Real-time slider previewing loops
-        this.gaussianSlider.addEventListener('input', (e) => {
-            const radius = parseFloat(e.target.value);
-            this.processLiveBlur('gaussian', radius);
-        });
+        if (this.radialSlider) {
+            this.radialSlider.addEventListener('input', () => this.processLiveBlur());
+        }
 
-        this.radialSlider.addEventListener('input', (e) => {
-            const intensity = parseInt(e.target.value, 10);
-            this.processLiveBlur('radial', intensity);
-        });
-
-        // User Operation Action toggles
-        this.confirmGaussian.addEventListener('click', () => this.handleConfirm());
-        this.discardGaussian.addEventListener('click', () => this.handleDiscard());
-        this.confirmRadial.addEventListener('click', () => this.handleConfirm());
-        this.discardRadial.addEventListener('click', () => this.handleDiscard());
+        if (this.confirmGaussian) {
+            this.confirmGaussian.addEventListener('click', () => this.handleConfirm());
+        }
+        
+        if (this.discardGaussian) {
+            this.discardGaussian.addEventListener('click', () => this.handleDiscard());
+        }
     },
 
-    openBlurPanel() {
-        if (this.blurPanel.style.display === 'none') {
-            // Close other core panels if visible (similar to global reset layout flows)
+toggleBlurPanel() {
+        if (!this.blurPanel) {
+            console.error("Blur panel element missing from the DOM.");
+            return;
+        }
+
+        // Directly read what is written in the style attribute
+        const currentDisplay = this.blurPanel.style.display.trim().toLowerCase();
+
+        // If it contains 'none' or is empty, force it open
+        if (currentDisplay === 'none' || currentDisplay === '') {
+            
+            // Close competing panels safely if they exist
+            const competingPanels = ['adjustPanel', 'transformPanel', 'filterPanel', 'curvesPanel', 'gradingPanel'];
+            competingPanels.forEach(id => {
+                const panel = document.getElementById(id);
+                if (panel) panel.style.display = 'none';
+            });
+
+            // Make it block instantly
             this.blurPanel.style.display = 'block';
-            this.blurGallery.style.display = 'flex';
-            this.gaussianControl.style.display = 'none';
-            this.radialControl.style.display = 'none';
+            if (this.blurBtn) this.blurBtn.classList.add('active');
+
+            // Fire canvas operations safely without blocking the UI if they error out
+            try {
+                this.startBlurSession();
+            } catch (e) {
+                console.warn("Canvas session skipped, but panel is open:", e);
+            }
+
         } else {
-            this.exitMasterPanel();
+            // If it's already 'block', close it
+            this.exitBlurPanel();
         }
     },
 
-    startSubToolSession(type) {
-        if (!window.CanvasEditor) return;
-        const workingSource = window.CanvasEditor.getWorkingImage();
+    startBlurSession() {
+        let workingSource = null;
+        if (window.CanvasEditor && typeof window.CanvasEditor.getWorkingImage === 'function') {
+            workingSource = window.CanvasEditor.getWorkingImage();
+        }
+        if (!workingSource || !workingSource.width) {
+            workingSource = window.imgState ? window.imgState.img : null;
+        }
+        
         if (!workingSource) return;
 
-        this.activeSubTool = type;
-        this.gaussianSlider.value = 0;
-        this.radialSlider.value = 0;
+        // Reset UI slider values to defaults
+        if (this.gaussianSlider) this.gaussianSlider.value = 0;
+        if (this.radialSlider) this.radialSlider.value = 0;
 
-        // Create high-resolution editing staging canvas
+        // Create offscreen buffer canvas for real-time manipulation
         this.toolBufferCanvas = document.createElement('canvas');
         this.toolBufferCanvas.width = workingSource.width;
         this.toolBufferCanvas.height = workingSource.height;
@@ -95,33 +109,36 @@ const BlurManager = {
         const bufferCtx = this.toolBufferCanvas.getContext('2d');
         bufferCtx.drawImage(workingSource, 0, 0);
 
-        // Extract high-resolution pristine pixel maps
+        // Store clean snapshot for non-destructive slider processing
         this.originalImageData = bufferCtx.getImageData(0, 0, workingSource.width, workingSource.height);
-
-        // Update UI drawers
-        this.blurGallery.style.display = 'none';
-        if (type === 'gaussian') {
-            this.gaussianControl.style.display = 'block';
-        } else if (type === 'radial') {
-            this.radialControl.style.display = 'block';
-        }
     },
 
-    processLiveBlur(type, value) {
+    processLiveBlur() {
         if (!this.originalImageData || !this.toolBufferCanvas) return;
 
-        if (type === 'gaussian') {
-            BlurFilters.applyGaussian(this.originalImageData, this.toolBufferCanvas, value);
-        } else if (type === 'radial') {
-            BlurFilters.applyRadialDepth(this.originalImageData, this.toolBufferCanvas, value);
+        const bufferCtx = this.toolBufferCanvas.getContext('2d');
+        bufferCtx.putImageData(this.originalImageData, 0, 0);
+
+        const radius = this.gaussianSlider ? parseFloat(this.gaussianSlider.value) : 0;
+        const intensity = this.radialSlider ? parseInt(this.radialSlider.value, 10) : 0;
+
+        // Run filter passes sequentially using execution pipeline
+        if (radius > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyGaussian) {
+            BlurFilters.applyGaussian(this.originalImageData, this.toolBufferCanvas, radius);
+        }
+        
+        if (intensity > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyRadialDepth) {
+            const currentData = bufferCtx.getImageData(0, 0, this.toolBufferCanvas.width, this.toolBufferCanvas.height);
+            BlurFilters.applyRadialDepth(currentData, this.toolBufferCanvas, intensity);
         }
 
         this.renderPreviewToViewport();
     },
 
     renderPreviewToViewport() {
-        if (!window.CanvasEditor) return;
-        const state = window.CanvasEditor.getState();
+        if (!this.toolBufferCanvas) return;
+        
+        const state = window.imgState || (window.CanvasEditor ? window.CanvasEditor.getState() : { x: 0, y: 0, width: this.screenCanvas.width, height: this.screenCanvas.height });
 
         this.screenCtx.clearRect(0, 0, this.screenCanvas.width, this.screenCanvas.height);
         this.screenCtx.drawImage(this.toolBufferCanvas, state.x, state.y, state.width, state.height);
@@ -133,36 +150,45 @@ const BlurManager = {
         }
     },
 
-    handleConfirm() {
-        if (this.toolBufferCanvas) {
-            window.CanvasEditor.updateImageXFromCanvas(this.toolBufferCanvas);
+handleConfirm() {
+        const radius = this.gaussianSlider ? parseFloat(this.gaussianSlider.value) : 0;
+        const intensity = this.radialSlider ? parseInt(this.radialSlider.value, 10) : 0;
+
+        // Commit the parameters directly into your application's History Engine
+        if (window.HistoryManager && typeof window.HistoryManager.commitChange === 'function') {
+            window.HistoryManager.commitChange("Gaussian Blur", {
+                type: 'blur',
+                values: {
+                    gaussian: radius,
+                    radial: intensity
+                }
+            });
+        } else {
+            // Fallback: If HistoryManager isn't tracking yet, trigger the effects pipeline manually
+            if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+                window.CanvasEditor.applyEffectsPipeline();
+            }
         }
-        this.exitSubToolSession();
+
+        this.exitBlurPanel();
     },
 
     handleDiscard() {
-        this.exitSubToolSession();
+        this.exitBlurPanel();
     },
 
-    exitSubToolSession() {
+    exitBlurPanel() {
+        if (this.blurPanel) this.blurPanel.style.display = 'none';
+        if (this.blurBtn) this.blurBtn.classList.remove('active');
+        
         this.toolBufferCanvas = null;
         this.originalImageData = null;
-        this.activeSubTool = null;
 
-        this.gaussianControl.style.display = 'none';
-        this.radialControl.style.display = 'none';
-        this.blurGallery.style.display = 'flex';
-
-        if (window.CanvasEditor) {
+        if (window.CanvasEditor && typeof window.CanvasEditor.redraw === 'function') {
             window.CanvasEditor.redraw();
         }
-    },
-
-    exitMasterPanel() {
-        this.blurPanel.style.display = 'none';
-        this.exitSubToolSession();
     }
 };
 
-// Auto-initialize on framework ready event
+// Auto-run once application DOM configuration locks in
 document.addEventListener('DOMContentLoaded', () => BlurManager.init());
