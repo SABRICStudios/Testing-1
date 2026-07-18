@@ -171,6 +171,17 @@ window.CanvasEditor = {
                         }
                     }
 
+
+                    // --- LIVE WINDOW CURVES INTERCEPT MATRIX PASS ---
+                    if (window.CurvesManager && window.CurvesManager.activeState && window.CurvesManager.activeState.active) {
+                        const lut = window.CurvesManager.activeState;
+                        // Remap extracted workspace configurations through active LUT arrays
+                        if (lut.lutR) r = lut.lutR[Math.round(r > 255 ? 255 : (r < 0 ? 0 : r))];
+                        if (lut.lutG) g = lut.lutG[Math.round(g > 255 ? 255 : (g < 0 ? 0 : g))];
+                        if (lut.lutB) b = lut.lutB[Math.round(b > 255 ? 255 : (b < 0 ? 0 : b))];
+                    }
+
+
                     data[i]     = r > 255 ? 255 : (r < 0 ? 0 : r);
                     data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g); 
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
