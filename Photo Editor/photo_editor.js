@@ -187,6 +187,12 @@ window.CanvasEditor = {
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
 
+
+                if (typeof processColorGradingPixelData === 'function') {
+                    imgData = processColorGradingPixelData(imgData);
+                }
+
+
                 if (configMatrix.filter && configMatrix.filter.type !== 'none' && window.FilterEngine) {
                     imgData = window.FilterEngine.process(imgData, configMatrix.filter.type, configMatrix.filter.intensity);
                 }
