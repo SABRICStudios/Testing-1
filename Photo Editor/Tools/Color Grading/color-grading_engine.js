@@ -11,7 +11,8 @@ let gradingBackupSnapshot = null;
  * Initializes and backs up the original clean canvas state
  */
 function initGradingEngine() {
-    gradingMainCanvas = document.getElementById('editorCanvas');
+    // Dynamic Fallback: Target the active pipeline buffer canvas rather than the flat layout element
+    gradingMainCanvas = window.imgState?.imageXCanvas || document.getElementById('editorCanvas');
     if (!gradingMainCanvas) return;
 
     gradingCanvasCtx = gradingMainCanvas.getContext('2d');
@@ -26,22 +27,22 @@ function initGradingEngine() {
 function revertGradingChanges() {
     if (gradingCanvasCtx && gradingBackupSnapshot) {
         gradingCanvasCtx.putImageData(gradingBackupSnapshot, 0, 0);
+        // Trigger a fresh redraw pass across global frames
+        if (window.CanvasEditor && typeof window.CanvasEditor.redraw === "function") {
+            window.CanvasEditor.redraw();
+        }
     }
 }
 
 /**
- * Core Pixel Processing Pipeline Engine Loop
+ * Inline Pixel Array Adjustments Hook for Canvas Editor Pipeline Intercepts
+ * Processes data directly on an in-memory buffer without destructive intermediate puts.
  */
-function applyColorGradingEngine() {
-    if (!gradingCanvasCtx || !gradingBackupSnapshot) return;
+function processColorGradingPixelData(imgData) {
+    if (!imgData || !GradingEditor) return imgData;
 
-    const width = gradingMainCanvas.width;
-    const height = gradingMainCanvas.height;
-    
-    // Fetch a fresh sandbox output container to overwrite
-    let outputImageData = gradingCanvasCtx.createImageData(width, height);
-    let src = gradingBackupSnapshot.data;
-    let dst = outputImageData.data;
+    let data = imgData.data;
+    const len = data.length;
 
     // Convert UI states (HSL) into operational processing RGB vectors
     const shadowRGB = hslToRgbOffset(GradingEditor.states.shadows.hue, GradingEditor.states.shadows.sat);
@@ -52,11 +53,11 @@ function applyColorGradingEngine() {
     const balanceShift = GradingEditor.balance / 100; // Value between -1.0 and 1.0
     const blendRange = Math.max(0.01, GradingEditor.blending / 100); 
 
-    for (let i = 0; i < src.length; i += 4) {
-        let r = src[i];
-        let g = src[i + 1];
-        let b = src[i + 2];
-        let a = src[i + 3];
+    for (let i = 0; i < len; i += 4) {
+        let r = data[i];
+        let g = data[i + 1];
+        let b = data[i + 2];
+        let a = data[i + 3];
 
         // 1. Calculate relative pixel luminance (standard ITU-R BT.709 weighting formula)
         let luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
@@ -87,14 +88,27 @@ function applyColorGradingEngine() {
         let finalB = b + (shadowRGB.b * wShadow) + (midtoneRGB.b * wMidtone) + (highlightRGB.b * wHighlight);
 
         // 4. Overwrite clamped channels safely onto output back-buffer data
-        dst[i]     = Math.max(0, Math.min(255, finalR));
-        dst[i + 1] = Math.max(0, Math.min(255, finalG));
-        dst[i + 2] = Math.max(0, Math.min(255, finalB));
-        dst[i + 3] = a; // Maintain alpha channel integrity intact
+        data[i]     = finalR > 255 ? 255 : (finalR < 0 ? 0 : finalR);
+        data[i + 1] = finalG > 255 ? 255 : (finalG < 0 ? 0 : finalG);
+        data[i + 2] = finalB > 255 ? 255 : (finalB < 0 ? 0 : finalB);
     }
+    return imgData;
+}
 
-    // Commit calculated array changes back down to the physical screen canvas viewport
-    gradingCanvasCtx.putImageData(outputImageData, 0, 0);
+/**
+ * Core Pixel Processing Pipeline Engine Loop (Stand-alone/Live UI Trigger Mode)
+ */
+function applyColorGradingEngine() {
+    // If the grading workspace module is active, tell the primary engine loop to redraw the stack
+    if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+        window.CanvasEditor.applyEffectsPipeline();
+    } else if (gradingCanvasCtx && gradingBackupSnapshot) {
+        // Fallback backward compatibility loop
+        let outputImageData = gradingCanvasCtx.createImageData(gradingMainCanvas.width, gradingMainCanvas.height);
+        outputImageData.data.set(gradingBackupSnapshot.data);
+        outputImageData = processColorGradingPixelData(outputImageData);
+        gradingCanvasCtx.putImageData(outputImageData, 0, 0);
+    }
 }
 
 /**
