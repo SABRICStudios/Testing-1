@@ -690,7 +690,7 @@
 
 
 
-<div id="blurPanel" class="blur-panel" style="display: none; padding: 14px; background: #141414; border-radius: 8px; width: 100%; box-sizing: border-box;">
+<div id="blurPanel" class="blur-panel" style="display:none; padding: 14px; background: #141414; border-radius: 8px; width: 100%; box-sizing: border-box;">
     
     <!-- Gaussian Blur Parameters -->
     <div class="slider-group" id="gaussianSliderControl" style="margin-bottom: 12px; padding: 12px; background: #1a1a1a; border-radius: 6px; width: 100%; box-sizing: border-box;">
@@ -865,61 +865,68 @@
 
 
 
-<div id="gradingPanel" class="grading-panel" style="display: none; background: #1a1a1a; padding: 15px; border-radius: 6px; font-family: sans-serif; color: white; width: 320px;">
-    <h4 style="margin-top: 0; color: #00adb5; display: flex; align-items: center; gap: 8px;">
-        <i class="fa fa-sliders"></i> Color Grading
+
+<div id="gradingPanel" class="grading-panel" style="display: none; background: #121212; padding: 20px; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e0e0e0; width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); user-select: none; -webkit-user-select: none; box-sizing: border-box;">
+    
+    <h4 style="margin: 0 0 15px 0; color: #fff; font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+        <i class="fa fa-sliders" style="color: #00adb5;"></i> Color Grading
     </h4>
 
-    <div class="grading-tabs" style="display: flex; background: #111; padding: 3px; border-radius: 4px; margin-bottom: 15px;">
-        <button type="button" class="grading-tab-btn active" data-zone="shadows" style="flex: 1; padding: 6px; background: #00adb5; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold;">Shadows</button>
-        <button type="button" class="grading-tab-btn" data-zone="midtones" style="flex: 1; padding: 6px; background: transparent; color: #aaa; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">Midtones</button>
-        <button type="button" class="grading-tab-btn" data-zone="highlights" style="flex: 1; padding: 6px; background: transparent; color: #aaa; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">Highlights</button>
+    <!-- Segmented Zone Tabs -->
+    <div class="grading-tabs" style="display: flex; background: #1a1a1a; padding: 3px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #2d2d2d;">
+        <button type="button" class="grading-tab-btn active" data-zone="shadows" style="flex: 1; padding: 8px; background: #00adb5; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; transition: all 0.2s;">Shadows</button>
+        <button type="button" class="grading-tab-btn" data-zone="midtones" style="flex: 1; padding: 8px; background: transparent; color: #aaa; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">Midtones</button>
+        <button type="button" class="grading-tab-btn" data-zone="highlights" style="flex: 1; padding: 8px; background: transparent; color: #aaa; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">Highlights</button>
     </div>
 
-    <div id="gradingSlidersContainer" style="margin-bottom: 15px;">
-        <div class="slider-group" style="margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                <label>Hue (Color)</label>
-                <span id="gradingHueVal" style="color: #00adb5;">0°</span>
-            </div>
-            <input type="range" id="gradingHue" min="0" max="360" value="0" style="width: 100%; accent-color: #00adb5; background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%); height: 8px; border-radius: 4px; appearance: none; outline: none;">
+    <!-- 2D Color Wheel Interaction Area -->
+    <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 20px;">
+        <div id="colorWheel" style="position: relative; width: 160px; height: 160px; background: conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); border-radius: 50%; border: 4px solid #222; box-shadow: inset 0 0 20px rgba(0,0,0,0.6); touch-action: none;">
+            <!-- White/Gray desaturation overlay mask inside the wheel -->
+            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,0) 75%); border-radius: 50%; pointer-events: none;"></div>
+            <!-- The Reticle/Target Handle representing current Hue/Sat -->
+            <div id="wheelPointer" style="position: absolute; top: 50%; left: 50%; width: 16px; height: 16px; background: #fff; border: 2px solid #121212; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.5); transform: translate(-50%, -50%); pointer-events: none; will-change: transform;"></div>
         </div>
-
-        <div class="slider-group" style="margin-bottom: 16px;">
-            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-                <label>Saturation (Intensity)</label>
-                <span id="gradingSatVal" style="color: #00adb5;">0%</span>
-            </div>
-            <input type="range" id="gradingSat" min="0" max="100" value="0" style="width: 100%; accent-color: #00adb5;">
+        
+        <!-- Live Readouts (Matching original IDs for hidden integration) -->
+        <div style="display: flex; justify-content: space-between; width: 100%; margin-top: 12px; font-size: 12px; color: #aaa; padding: 0 10px;">
+            <span>Hue: <strong id="gradingHueVal" style="color: #00adb5;">0°</strong></span>
+            <span>Saturation: <strong id="gradingSatVal" style="color: #00adb5;">0%</strong></span>
         </div>
+        
+        <!-- Hidden Inputs to perfectly match original backend scripts expectations -->
+        <input type="hidden" id="gradingHue" value="0">
+        <input type="hidden" id="gradingSat" value="0">
     </div>
 
     <hr style="border: 0; border-top: 1px solid #2d2d2d; margin: 15px 0;">
 
-    <div class="global-grading-controls" style="margin-bottom: 20px;">
+    <!-- Global Controls -->
+    <div class="global-grading-controls" style="margin-bottom: 20px; background: #1a1a1a; padding: 12px; border-radius: 8px; border: 1px solid #2d2d2d;">
         <div class="slider-group" style="margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #aaa;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; color: #aaa;">
                 <label for="gradingBalance">Balance</label>
-                <span id="gradingBalanceVal">0</span>
+                <span id="gradingBalanceVal" style="color: #fff; font-weight: 600;">0</span>
             </div>
-            <input type="range" id="gradingBalance" min="-100" max="100" value="0" style="width: 100%; accent-color: #00adb5;">
+            <input type="range" id="gradingBalance" min="-100" max="100" value="0" style="width: 100%; accent-color: #00adb5; height: 4px; outline: none;">
         </div>
 
         <div class="slider-group">
-            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; color: #aaa;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; color: #aaa;">
                 <label for="gradingBlending">Blending</label>
-                <span id="gradingBlendingVal">50%</span>
+                <span id="gradingBlendingVal" style="color: #fff; font-weight: 600;">50%</span>
             </div>
-            <input type="range" id="gradingBlending" min="0" max="100" value="50" style="width: 100%; accent-color: #00adb5;">
+            <input type="range" id="gradingBlending" min="0" max="100" value="50" style="width: 100%; accent-color: #00adb5; height: 4px; outline: none;">
         </div>
     </div>
 
+    <!-- Action Buttons -->
     <div class="tool-actions" style="display: flex; gap: 10px;">
-        <button type="button" id="confirmGradingBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 8px; cursor: pointer; border-radius: 4px; font-weight: bold;">
+        <button type="button" id="confirmGradingBtn" style="flex: 1; background: #00adb5; color: white; border: none; padding: 10px; cursor: pointer; border-radius: 6px; font-weight: bold; font-size: 13px;">
             <i class="fa fa-check"></i> Apply
         </button>
-        <button type="button" id="discardGradingBtn" style="flex: 1; background: #333; color: white; border: none; padding: 8px; cursor: pointer; border-radius: 4px;">
-            <i class="fa fa-times"></i> Cancel
+        <button type="button" id="discardGradingBtn" style="flex: 1; background: #2a2a2a; color: #ccc; border: none; padding: 10px; cursor: pointer; border-radius: 6px; font-size: 13px;">
+            Cancel
         </button>
     </div>
 </div>
