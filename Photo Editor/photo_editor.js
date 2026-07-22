@@ -227,6 +227,7 @@ window.CanvasEditor = {
             }
 
             // --- PLUG DIRECTLY INTO SUBSEQUENT KERNELS WITHOUT REWRITING IMAGE DATA ---
+// --- PLUG DIRECTLY INTO SUBSEQUENT KERNELS WITHOUT REWRITING IMAGE DATA ---
             if (baseline.sharpen !== 0) {
                 imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
             }
@@ -252,66 +253,40 @@ window.CanvasEditor = {
                 }
                 ctx.putImageData(imgData, 0, 0);
             }
-            // ================================================
 
-                if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
-                    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
-                    const tempRenderCanvas = document.createElement('canvas');
-                    tempRenderCanvas.width = imgData.width;
-                    tempRenderCanvas.height = imgData.height;
-                    tempRenderCanvas.getContext('2d').putImageData(imgData, 0, 0);
-                    ctx.drawImage(tempRenderCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
-                } else {
-                    if (targetCanvas.width !== imgData.width || targetCanvas.height !== imgData.height) {
-                        targetCanvas.width = imgData.width;
-                        targetCanvas.height = imgData.height;
-                    }
-                    ctx.putImageData(imgData, 0, 0);
-                }
-
-                if (baseline.vignette !== 0) {
-                    imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
-                }
-
-                if (baseline.clarity !== 0) {
-                    imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
-                }
-
-                // FIXED: Safely verify that operations have not introduced pixel array bounds mismatches
-                if (targetCanvas.width !== imgData.width || targetCanvas.height !== imgData.height) {
-                    targetCanvas.width = imgData.width;
-                    targetCanvas.height = imgData.height;
-                }
-                ctx.putImageData(imgData, 0, 0);
-
-                if (baseline.vignette !== 0) {
-                    ctx.save();
-                    ctx.globalCompositeOperation = 'source-over';
-                    const cx = targetCanvas.width / 2; const cy = targetCanvas.height / 2;
-                    const maxRadius = Math.sqrt(cx * cx + cy * cy);
-                    const gradient = ctx.createRadialGradient(cx, cy, maxRadius * 0.2, cx, cy, maxRadius * 0.85);
-                    const opacity = Math.min(1, Math.abs(baseline.vignette) / 100);
-                    
-                    if (baseline.vignette > 0) {
-                        gradient.addColorStop(0, 'rgba(0,0,0,0)'); gradient.addColorStop(1, `rgba(0,0,0,${opacity * 0.85})`);
-                    } else {
-                        gradient.addColorStop(0, 'rgba(255,255,255,0)'); gradient.addColorStop(1, `rgba(255,255,255,${opacity * 0.85})`);
-                    }
-                    ctx.fillStyle = gradient; ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
-                    ctx.restore();
-                }
-
-                if (typeof window.CanvasEditor.redraw === "function") {
-                    window.CanvasEditor.redraw();
-                }
+            // --- VIGNETTE PASS ---
+            if (baseline.vignette !== 0) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'source-over';
+                const cx = targetCanvas.width / 2; 
+                const cy = targetCanvas.height / 2;
+                const maxRadius = Math.sqrt(cx * cx + cy * cy);
+                const gradient = ctx.createRadialGradient(cx, cy, maxRadius * 0.2, cx, cy, maxRadius * 0.85);
+                const opacity = Math.min(1, Math.abs(baseline.vignette) / 100);
                 
-            } catch (error) {
-                console.error("Pipeline processing failure:", error);
-            } finally {
-                window.canvasRenderPending = false;
+                if (baseline.vignette > 0) {
+                    gradient.addColorStop(0, 'rgba(0,0,0,0)'); 
+                    gradient.addColorStop(1, `rgba(0,0,0,${opacity * 0.85})`);
+                } else {
+                    gradient.addColorStop(0, 'rgba(255,255,255,0)'); 
+                    gradient.addColorStop(1, `rgba(255,255,255,${opacity * 0.85})`);
+                }
+                ctx.fillStyle = gradient; 
+                ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+                ctx.restore();
             }
-        });
-    },
+
+            if (typeof window.CanvasEditor.redraw === "function") {
+                window.CanvasEditor.redraw();
+            }
+            
+        } catch (error) {
+            console.error("Pipeline processing failure:", error);
+        } finally {
+            window.canvasRenderPending = false;
+        }
+    });
+},
 
     _applySharpenKernel: (imgData, value) => {
         const w = imgData.width; const h = imgData.height;
@@ -406,7 +381,7 @@ window.CanvasEditor = {
         return outImgData;
     },
     
-    redraw: () => {
+redraw: () => {
         const canvas = document.getElementById('editorCanvas');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -439,7 +414,16 @@ window.CanvasEditor = {
         ctx.rotate((state.rotation * Math.PI) / 180);
         ctx.translate(-centerX, -centerY);
 
-        ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
+        // SYNC AND DRAW LAYERS
+        if (typeof window.initLayersEngine === 'function') {
+            window.initLayersEngine();
+        }
+
+        if (typeof window.drawLayersCompositeLoop === 'function') {
+            window.drawLayersCompositeLoop();
+        } else {
+            ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
+        }
 
         if (state.isSelected && window.InteractionManager) {
             ctx.strokeStyle = '#00bcd4'; 
@@ -460,7 +444,6 @@ window.CanvasEditor = {
         
         ctx.restore();
     },
-
     resetStateForCroppedImage: function(newWidth, newHeight) {
         const canvas = document.getElementById('editorCanvas');
         if (!canvas) return;
