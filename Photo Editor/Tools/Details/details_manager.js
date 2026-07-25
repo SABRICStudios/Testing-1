@@ -1,7 +1,4 @@
-/**
- * Tools/Details/OPERATIONS/details_engine.js
- * Coordinator combining Edge Masking and Unsharp Masking 
- */
+
 
 window.DetailsEngine = {
     process(imgData, settings) {
@@ -186,48 +183,58 @@ window.DetailsManager = {
     },
 
 renderPreviewCanvas() {
-        if (!this.isPanelOpen || !window.imgState || !window.imgState.img) return;
+    if (!this.isPanelOpen) return;
 
-        const canvas = this.dom.previewCanvas;
-        if (!canvas) return;
+    const canvas = this.dom.previewCanvas;
+    if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
+    
+    // 1. Force preview canvas buffer dimensions to match display layout size
+    const displayW = canvas.clientWidth || 160;
+    const displayH = canvas.clientHeight || 160;
+
+    if (canvas.width !== displayW || canvas.height !== displayH) {
+        canvas.width = displayW;
+        canvas.height = displayH;
+    }
+
+    // 2. Dynamically get the active layer source (Fallback to imgState if no active layer)
+    const activeLayer = window.CanvasEditor ? window.CanvasEditor.getActiveLayer() : null;
+    const sourceImg = activeLayer 
+        ? (activeLayer.canvas || activeLayer.sourceImage || activeLayer.img) 
+        : (window.imgState ? window.imgState.img : null);
+
+    if (!sourceImg) return;
+
+    // Get source native dimensions safely regardless of Canvas element or HTMLImageElement
+    const sourceWidth = sourceImg.width || sourceImg.naturalWidth || displayW;
+    const sourceHeight = sourceImg.height || sourceImg.naturalHeight || displayH;
+
+    // 3. Calculate crop coordinates based on interactive tap mapping relative to active layer bounds
+    let cropX = Math.floor(this.cropFocusX * sourceWidth - displayW / 2);
+    let cropY = Math.floor(this.cropFocusY * sourceHeight - displayH / 2);
+    
+    // 4. Keep crop bounds strictly clamped inside the physical limits of the active layer asset
+    cropX = Math.max(0, Math.min(sourceWidth - displayW, cropX));
+    cropY = Math.max(0, Math.min(sourceHeight - displayH, cropY));
+
+    ctx.clearRect(0, 0, displayW, displayH);
+    
+    try {
+        // 5. Draw a clean 1:1 scale micro-region of the SELECTED layer onto the preview canvas
+        ctx.drawImage(sourceImg, cropX, cropY, displayW, displayH, 0, 0, displayW, displayH);
         
-        // 1. Force the canvas drawing buffer dimensions to match its exact display layout size
-        const displayW = canvas.clientWidth || 160;
-        const displayH = canvas.clientHeight || 160;
-
-        if (canvas.width !== displayW || canvas.height !== displayH) {
-            canvas.width = displayW;
-            canvas.height = displayH;
+        // 6. Run the details pixel manipulation engine over this micro-grid
+        if (window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
+            let imgData = ctx.getImageData(0, 0, displayW, displayH);
+            imgData = window.DetailsEngine.process(imgData, this.activeState);
+            ctx.putImageData(imgData, 0, 0);
         }
-
-        const sourceImg = window.imgState.img;
-        
-        // 2. Calculate coordinates based on interactive tap mapping
-        let cropX = Math.floor(this.cropFocusX * sourceImg.width - displayW / 2);
-        let cropY = Math.floor(this.cropFocusY * sourceImg.height - displayH / 2);
-        
-        // 3. Keep crop bounds strictly clamped inside the physical limits of the source asset
-        cropX = Math.max(0, Math.min(sourceImg.width - displayW, cropX));
-        cropY = Math.max(0, Math.min(sourceImg.height - displayH, cropY));
-
-        ctx.clearRect(0, 0, displayW, displayH);
-        
-        try {
-            // 4. Draw a clean 1:1 scale micro-region directly onto the canvas buffer
-            ctx.drawImage(sourceImg, cropX, cropY, displayW, displayH, 0, 0, displayW, displayH);
-            
-            // 5. Run the pixel manipulation effects pipeline over this micro-grid
-            if (window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
-                let imgData = ctx.getImageData(0, 0, displayW, displayH);
-                imgData = window.DetailsEngine.process(imgData, this.activeState);
-                ctx.putImageData(imgData, 0, 0);
-            }
-        } catch (e) {
-            console.warn("Details preview texture context not ready yet:", e);
-        }
-    },
+    } catch (e) {
+        console.warn("Details preview texture context not ready yet:", e);
+    }
+},
     confirmModifications() {
         if (window.HistoryManager) {
             window.HistoryManager.commitChange("Detail Enhancement", {
