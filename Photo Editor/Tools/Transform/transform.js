@@ -60,55 +60,45 @@ class TransformToolController {
         }
     }
 
-handleDimensionChange(e, modifiedField) {
-    let val = parseInt(e.target.value, 10) || 0;
-    if (val <= 0) return;
+    handleDimensionChange(e, modifiedField) {
+        let val = parseInt(e.target.value, 10) || 0;
+        if (val <= 0) return;
 
-    // Safety check to ensure we don't accidentally fall back to the 20px floor mid-input
-    if (val < 25) val = 25; 
+        // Safety check floor limit
+        if (val < 25) val = 25; 
 
-    if (!this.currentAspectRatio && this.widthInput && this.heightInput) {
-        const w = parseInt(this.widthInput.value, 10) || 1;
-        const h = parseInt(this.heightInput.value, 10) || 1;
-        this.currentAspectRatio = w / h;
-    }
-
-    const lockRatio = this.aspectRatioLockCheckbox 
-        ? this.aspectRatioLockCheckbox.checked 
-        : (window.imgState ? window.imgState.maintainAspectRatio : false);
-
-    if (lockRatio && this.currentAspectRatio) {
-        if (modifiedField === 'width' && this.heightInput) {
-            this.heightInput.value = Math.round(val / this.currentAspectRatio);
-        } else if (modifiedField === 'height' && this.widthInput) {
-            this.widthInput.value = Math.round(val * this.currentAspectRatio);
+        if (!this.currentAspectRatio && this.widthInput && this.heightInput) {
+            const w = parseInt(this.widthInput.value, 10) || 1;
+            const h = parseInt(this.heightInput.value, 10) || 1;
+            this.currentAspectRatio = w / h;
         }
-    }
-    
-    // Explicitly update values right away before triggering pipeline
-    if (this.widthInput) window.imgState.width = parseInt(this.widthInput.value, 10);
-    if (this.heightInput) window.imgState.height = parseInt(this.heightInput.value, 10);
 
-    this.liveRenderTransformationPreview(
-        parseInt(this.widthInput?.value, 10),
-        parseInt(this.heightInput?.value, 10),
-        parseFloat(this.rotationSlider?.value) || 0
-    );
+        const lockRatio = this.aspectRatioLockCheckbox 
+            ? this.aspectRatioLockCheckbox.checked 
+            : (window.imgState ? window.imgState.maintainAspectRatio : false);
 
+        if (lockRatio && this.currentAspectRatio) {
+            if (modifiedField === 'width' && this.heightInput) {
+                this.heightInput.value = Math.round(val / this.currentAspectRatio);
+            } else if (modifiedField === 'height' && this.widthInput) {
+                this.widthInput.value = Math.round(val * this.currentAspectRatio);
+            }
+        }
         
-        this.liveRenderTransformationPreview(
-            parseInt(this.widthInput?.value, 10) || window.imgState?.img?.width || 0,
-            parseInt(this.heightInput?.value, 10) || window.imgState?.img?.height || 0,
-            parseFloat(this.rotationSlider?.value) || 0
-        );
+        const targetW = parseInt(this.widthInput?.value, 10) || window.imgState?.width || 1;
+        const targetH = parseInt(this.heightInput?.value, 10) || window.imgState?.height || 1;
+        const targetR = parseFloat(this.rotationSlider?.value) || window.imgState?.rotation || 0;
+
+        // Explicitly trigger single preview render pass
+        this.liveRenderTransformationPreview(targetW, targetH, targetR);
     }
 
     handleRotationLivePreview(degrees) {
         if (this.rotationNumberInput) {
             this.rotationNumberInput.value = Math.round(degrees);
         }
-        const w = parseInt(this.widthInput?.value, 10) || window.imgState?.img?.width || 0;
-        const h = parseInt(this.heightInput?.value, 10) || window.imgState?.img?.height || 0;
+        const w = parseInt(this.widthInput?.value, 10) || window.imgState?.width || 0;
+        const h = parseInt(this.heightInput?.value, 10) || window.imgState?.height || 0;
         this.liveRenderTransformationPreview(w, h, degrees);
     }
 
@@ -120,21 +110,23 @@ handleDimensionChange(e, modifiedField) {
         
         if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === "function") {
             window.CanvasEditor.applyEffectsPipeline();
+        } else if (typeof window.renderCanvasStack === "function") {
+            window.renderCanvasStack();
         }
     }
 
     commitTransformState(label) {
-        if (!window.HistoryManager || !window.imgState) return;
+        if (!window.imgState) return;
 
-        const targetW = parseInt(this.widthInput?.value, 10) || window.imgState.width || window.imgState.img?.width;
-        const targetH = parseInt(this.heightInput?.value, 10) || window.imgState.height || window.imgState.img?.height;
+        const targetW = parseInt(this.widthInput?.value, 10) || window.imgState.width;
+        const targetH = parseInt(this.heightInput?.value, 10) || window.imgState.height;
         const targetR = parseFloat(this.rotationSlider?.value) || window.imgState.rotation || 0;
 
         window.imgState.width = targetW;
         window.imgState.height = targetH;
         window.imgState.rotation = targetR;
 
-        if (typeof window.HistoryManager.commitChange === "function") {
+        if (window.HistoryManager && typeof window.HistoryManager.commitChange === "function") {
             window.HistoryManager.commitChange(label, {
                 type: 'transform',
                 values: { width: targetW, height: targetH, rotation: targetR }
@@ -144,43 +136,41 @@ handleDimensionChange(e, modifiedField) {
         }
     }
 
-syncFieldsWithHistory() {
-    if (!window.HistoryManager || !window.imgState || !window.imgState.img) return;
+    syncFieldsWithHistory() {
+        if (!window.imgState) return;
 
-    const configMatrix = window.HistoryManager.getCurrentParameters();
-    const transformState = configMatrix.transform || {};
+        let currentW = window.imgState.width;
+        let currentH = window.imgState.height;
+        let currentR = window.imgState.rotation || 0;
 
-    // Prioritize true image dimensions, fall back to state dimensions
-    let fallbackW = window.imgState.img.naturalWidth || window.imgState.img.width;
-    let fallbackH = window.imgState.img.naturalHeight || window.imgState.img.height;
+        if (window.HistoryManager && typeof window.HistoryManager.getCurrentParameters === "function") {
+            const configMatrix = window.HistoryManager.getCurrentParameters();
+            const transformState = configMatrix.transform || {};
+            if (transformState.width) currentW = transformState.width;
+            if (transformState.height) currentH = transformState.height;
+            if (transformState.rotation !== undefined) currentR = transformState.rotation;
+        }
 
-    // Safety check: If fallback is still abnormally tiny, check the backing canvas
-    if ((fallbackW <= 20 || fallbackH <= 20) && window.imgState.imageXCanvas) {
-        fallbackW = window.imgState.imageXCanvas.width;
-        fallbackH = window.imgState.imageXCanvas.height;
+        // Fallbacks if width or height are undefined
+        let fallbackW = window.imgState.img?.naturalWidth || window.imgState.img?.width || 800;
+        let fallbackH = window.imgState.img?.naturalHeight || window.imgState.img?.height || 600;
+
+        currentW = currentW || fallbackW;
+        currentH = currentH || fallbackH;
+
+        if (this.widthInput) this.widthInput.value = currentW;
+        if (this.heightInput) this.heightInput.value = currentH;
+        if (this.rotationSlider) this.rotationSlider.value = currentR;
+        if (this.rotationNumberInput) this.rotationNumberInput.value = Math.round(currentR);
+
+        this.currentAspectRatio = (currentW / currentH) || 1.0;
+        
+        window.imgState.width = currentW;
+        window.imgState.height = currentH;
+        window.imgState.rotation = currentR;
     }
-
-    let currentW = transformState.width || fallbackW;
-    let currentH = transformState.height || fallbackH;
-
-    // Hard emergency floor block so it can never snap down to 20px on initialization
-    if (currentW <= 20 && fallbackW > 20) currentW = fallbackW;
-    if (currentH <= 20 && fallbackH > 20) currentH = fallbackH;
-
-    const currentR = transformState.rotation !== undefined ? transformState.rotation : 0;
-
-    if (this.widthInput) this.widthInput.value = currentW;
-    if (this.heightInput) this.heightInput.value = currentH;
-    if (this.rotationSlider) this.rotationSlider.value = currentR;
-    if (this.rotationNumberInput) this.rotationNumberInput.value = Math.round(currentR);
-
-    this.currentAspectRatio = (currentW / currentH) || 1.0;
-    
-    window.imgState.width = currentW;
-    window.imgState.height = currentH;
-    window.imgState.rotation = currentR;
 }
-}
+
 document.addEventListener("DOMContentLoaded", () => {
     window.TransformToolControllerInstance = new TransformToolController();
 });
