@@ -951,15 +951,21 @@
 
 
 
-<div id="layersPanel" class="layers-panel" style="display: none; position: absolute; right: 20px; top: 20px; width: 280px; background: #1a1a1a; border: 1px solid #2d2d2d; border-radius: 6px; font-family: sans-serif; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100;">
+<div id="layersPanel" class="layers-panel" style="display: none; position: absolute; right: 20px; top: 20px; width: 290px; background: #1a1a1a; border: 1px solid #2d2d2d; border-radius: 6px; font-family: sans-serif; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100;">
     
+    <!-- Hidden input for loading custom image files into an Image Layer -->
+    <input type="file" id="layerImageFileInput" accept="image/*" style="display: none;">
+
+    <!-- Panel Header -->
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #2d2d2d;">
         <h4 style="margin: 0; color: #00adb5; font-size: 14px;"><i class="fa fa-clone"></i> Layers Stack</h4>
         <i id="closeLayersBtn" class="fa fa-times" style="cursor: pointer; color: #888;"></i>
     </div>
 
+    <!-- Controls Area -->
     <div style="padding: 12px; border-bottom: 1px solid #2d2d2d; background: #151515;">
-        <div class="slider-group" style="margin-bottom: 10px;">
+        <!-- Layer Opacity Slider -->
+        <div class="slider-group" style="margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; color: #aaa;">
                 <label for="layerOpacity">Layer Opacity</label>
                 <span id="layerOpacityVal" style="color: #00adb5;">100%</span>
@@ -967,10 +973,21 @@
             <input type="range" id="layerOpacity" min="0" max="100" value="100" style="width: 100%; accent-color: #00adb5;">
         </div>
 
-        <div style="display: flex; gap: 8px;">
-            <button type="button" id="addNewLayerBtn" title="Add New Layer" style="flex: 1; padding: 6px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                <i class="fa fa-plus" style="color: #00adb5;"></i> Add
+        <!-- NEW: Layer Creation Buttons for Different Types -->
+        <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+            <button type="button" id="addTransparentLayerBtn" title="Add Transparent Layer" style="flex: 1; padding: 6px 2px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <i class="fa fa-square-o" style="color: #00adb5;"></i> Transp
             </button>
+            <button type="button" id="addBlankLayerBtn" title="Add Solid/Blank Layer" style="flex: 1; padding: 6px 2px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <i class="fa fa-file-o" style="color: #00adb5;"></i> Blank
+            </button>
+            <button type="button" id="addImageLayerBtn" title="Add Image Layer" style="flex: 1; padding: 6px 2px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <i class="fa fa-picture-o" style="color: #00adb5;"></i> Image
+            </button>
+        </div>
+
+        <!-- Layer Rearrange & Delete Actions -->
+        <div style="display: flex; gap: 6px;">
             <button type="button" id="deleteLayerBtn" title="Delete Active Layer" style="flex: 1; padding: 6px; background: #2a2a2a; color: #fff; border: 1px solid #3d3d3d; border-radius: 4px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 4px;">
                 <i class="fa fa-trash" style="color: #ff4a4a;"></i> Delete
             </button>
@@ -979,22 +996,29 @@
         </div>
     </div>
 
+    <!-- Layers List Container -->
     <div id="layersListContainer" style="max-height: 240px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
         
+        <!-- Example: Image Layer (Active) -->
         <div class="layer-item active" data-layer-id="2" style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #252525; border: 1px solid #00adb5; border-radius: 4px; cursor: pointer;">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <button type="button" class="layer-visibility-toggle" style="background: none; border: none; color: #00adb5; cursor: pointer; padding: 0;"><i class="fa fa-eye"></i></button>
-                <div class="layer-thumbnail" style="width: 32px; height: 32px; background: #111; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #00adb5; font-size: 12px;">T</div>
-                <span class="layer-name" style="font-size: 12px; font-weight: bold; color: #fff;">Watermark Text</span>
+                <div class="layer-thumbnail" style="width: 32px; height: 32px; background: #111; border-radius: 3px; display: flex; align-items: center; justify-content: center; color: #00adb5; font-size: 12px;">
+                    <i class="fa fa-picture-o"></i>
+                </div>
+                <span class="layer-name" style="font-size: 12px; font-weight: bold; color: #fff;">Overlay_Graphic.png</span>
             </div>
             <i class="fa fa-bars" style="color: #444; font-size: 12px;"></i>
         </div>
 
+        <!-- Example: Transparent Layer -->
         <div class="layer-item" data-layer-id="1" style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 4px; cursor: pointer;">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <button type="button" class="layer-visibility-toggle" style="background: none; border: none; color: #888; cursor: pointer; padding: 0;"><i class="fa fa-eye"></i></button>
-                <div class="layer-thumbnail" style="width: 32px; height: 32px; background: #333; border-radius: 3px; background-image: linear-gradient(45deg, #111 25%, transparent 25%), linear-gradient(-45deg, #111 25%, transparent 25%); background-size: 8px 8px;"></div>
-                <span class="layer-name" style="font-size: 12px; color: #aaa;">Background.jpg</span>
+                <div class="layer-thumbnail" style="width: 32px; height: 32px; background: #333; border-radius: 3px; background-image: linear-gradient(45deg, #111 25%, transparent 25%), linear-gradient(-45deg, #111 25%, transparent 25%); background-size: 8px 8px; display: flex; align-items: center; justify-content: center; color: #00adb5;">
+                    <i class="fa fa-square-o"></i>
+                </div>
+                <span class="layer-name" style="font-size: 12px; color: #aaa;">Transparent Canvas</span>
             </div>
             <i class="fa fa-lock" style="color: #555; font-size: 12px; margin-right: 2px;"></i>
         </div>

@@ -1,4 +1,4 @@
-// photo_editor.js - High Performance Live Intercept Matrix Processing
+// photo_editor.js - High Performance Live Intercept Matrix Processing (Layer-Aware)
 window.imgState = {
     img: null,            
     imageXCanvas: null,   
@@ -19,15 +19,105 @@ window.CanvasEditor = {
     _kernelCanvasBuffer: null,
     _kernelCtxBuffer: null,
 
+    getActiveLayer: () => {
+        if (window.LayerManager && typeof window.LayerManager.getActiveLayer === 'function') {
+            return window.LayerManager.getActiveLayer();
+        }
+        return null;
+    },
+
     getState: () => window.imgState,
+
+renderCanvasStack: () => {
+    const editorCanvas = document.getElementById('editorCanvas');
+    if (!editorCanvas) return;
+    const ctx = editorCanvas.getContext('2d');
+
+    ctx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
+
+    if (window.LayerManager && Array.isArray(window.LayerManager.layers) && window.LayerManager.layers.length > 0) {
+        const activeLayer = window.CanvasEditor ? window.CanvasEditor.getActiveLayer() : null;
+
+        // Draw layers from bottom (Background) to top
+        const sortedLayers = [...window.LayerManager.layers].reverse();
+
+        sortedLayers.forEach(layer => {
+            if (!layer || layer.visible === false) return;
+
+            // 1. Find the drawable source (supports layer.canvas, layer.image, or layer.img)
+            const source = layer.canvas || layer.image || layer.img;
+
+            // 2. Ensure source exists and, if it's an Image element, that it's fully loaded
+            if (!source) return;
+            if (source instanceof HTMLImageElement && (!source.complete || source.naturalWidth === 0)) {
+                return; // Image is still loading or broken
+            }
+
+            ctx.save();
+
+            // Set opacity and blend modes
+            ctx.globalAlpha = layer.opacity !== undefined ? layer.opacity : 1.0;
+            if (layer.blendMode) {
+                ctx.globalCompositeOperation = layer.blendMode;
+            }
+
+            const isActive = activeLayer && activeLayer.id === layer.id;
+
+            // 3. Robust dimension resolution
+            const sourceWidth = source.width || source.naturalWidth || 0;
+            const sourceHeight = source.height || source.naturalHeight || 0;
+
+            const posX = isActive && window.imgState?.x !== undefined ? window.imgState.x : (layer.x || 0);
+            const posY = isActive && window.imgState?.y !== undefined ? window.imgState.y : (layer.y || 0);
+            const posW = isActive && window.imgState?.width ? window.imgState.width : (layer.width || sourceWidth);
+            const posH = isActive && window.imgState?.height ? window.imgState.height : (layer.height || sourceHeight);
+            const rot = isActive && window.imgState?.rotation !== undefined ? window.imgState.rotation : (layer.rotation || 0);
+
+            // Skip rendering if dimensions are zero
+            if (posW <= 0 || posH <= 0) {
+                ctx.restore();
+                return;
+            }
+
+            // Apply rotation around center point
+            if (rot) {
+                const cx = posX + posW / 2;
+                const cy = posY + posH / 2;
+                ctx.translate(cx, cy);
+                ctx.rotate((rot * Math.PI) / 180);
+                ctx.translate(-cx, -cy);
+            }
+
+            // Draw image/canvas element
+            ctx.drawImage(source, posX, posY, posW, posH);
+
+            ctx.restore();
+        });
+    } else if (window.imgState && window.imgState.imageXCanvas) {
+        // Fallback for single image mode
+        const fallbackSource = window.imgState.imageXCanvas;
+        
+        if (fallbackSource instanceof HTMLImageElement && !fallbackSource.complete) return;
+
+        ctx.drawImage(
+            fallbackSource,
+            window.imgState.x || 0,
+            window.imgState.y || 0,
+            window.imgState.width || fallbackSource.width || 0,
+            window.imgState.height || fallbackSource.height || 0
+        );
+    }
+},
     
     getWorkingImage: () => {
         const cleanCanvas = document.createElement('canvas');
-        if (!window.imgState.img) return cleanCanvas;
-        cleanCanvas.width = window.imgState.img.width;
-        cleanCanvas.height = window.imgState.img.height;
+        const activeLayer = window.CanvasEditor.getActiveLayer();
+        const source = activeLayer ? activeLayer.canvas : window.imgState.imageXCanvas;
         
-        // FIXED: Corrected reference container context target shell variables
+        if (!source) return cleanCanvas;
+        cleanCanvas.width = source.width;
+        cleanCanvas.height = source.height;
+        
         const ctx = cleanCanvas.getContext('2d');
         const state = window.imgState;
         
@@ -38,7 +128,7 @@ window.CanvasEditor = {
         }
         
         ctx.drawImage(
-            window.imgState.imageXCanvas, 
+            source, 
             -state.width / 2, 
             -state.height / 2, 
             state.width, 
@@ -51,22 +141,31 @@ window.CanvasEditor = {
 
     applyEffectsPipeline: () => {
         if (window.canvasRenderPending) return;
-        if (!window.imgState.img || !window.imgState.imageXCanvas) return;
+
+        const activeLayer = window.CanvasEditor.getActiveLayer();
+        const sourceImg = activeLayer ? (activeLayer.sourceImage || activeLayer.originalCanvas || activeLayer.canvas) : window.imgState.img;
+        const targetCanvas = activeLayer ? activeLayer.canvas : window.imgState.imageXCanvas;
+
+        if (!sourceImg || !targetCanvas) return;
 
         window.canvasRenderPending = true;
 
         requestAnimationFrame(() => {
             try {
-                const originalImg = window.imgState.img;
-                const targetCanvas = window.imgState.imageXCanvas;
                 const ctx = targetCanvas.getContext('2d');
-                if (!window.HistoryManager) return;
+                if (!window.HistoryManager) {
+                    window.canvasRenderPending = false;
+                    return;
+                }
                 
-                const configMatrix = window.HistoryManager.getCurrentParameters();
+                const configMatrix = (activeLayer && activeLayer.parameters) 
+                    ? activeLayer.parameters 
+                    : window.HistoryManager.getCurrentParameters();
+
                 const transformState = configMatrix.transform || {};
                 
-                let baseWidth = parseInt(window.imgState.width, 10) || parseInt(transformState.width, 10) || originalImg.naturalWidth || originalImg.width;
-                let baseHeight = parseInt(window.imgState.height, 10) || parseInt(transformState.height, 10) || originalImg.naturalHeight || originalImg.height;
+                let baseWidth = parseInt(window.imgState.width, 10) || parseInt(transformState.width, 10) || sourceImg.naturalWidth || sourceImg.width;
+                let baseHeight = parseInt(window.imgState.height, 10) || parseInt(transformState.height, 10) || sourceImg.naturalHeight || sourceImg.height;
                 const degrees = window.imgState.rotation !== undefined ? parseFloat(window.imgState.rotation) : (parseFloat(transformState.rotation) || 0);
 
                 targetCanvas.width = baseWidth;
@@ -77,9 +176,7 @@ window.CanvasEditor = {
                 ctx.imageSmoothingQuality = 'high';
                 ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
                 
-                // FIXED: Draw image directly into context. Using putImageData right after 
-                // drawing textures causes pixel scaling degradation on downsampled image layers.
-                ctx.drawImage(originalImg, 0, 0, baseWidth, baseHeight);
+                ctx.drawImage(sourceImg, 0, 0, baseWidth, baseHeight);
 
                 let imgData;
                 const MAX_PREVIEW_DIM = 1024;
@@ -91,7 +188,7 @@ window.CanvasEditor = {
                     tempCanvas.height = Math.round(baseHeight * scaleFactor);
                     
                     const tempCtx = tempCanvas.getContext('2d');
-                    tempCtx.drawImage(originalImg, 0, 0, tempCanvas.width, tempCanvas.height);
+                    tempCtx.drawImage(sourceImg, 0, 0, tempCanvas.width, tempCanvas.height);
                     imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                 } else {
                     imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
@@ -108,7 +205,43 @@ window.CanvasEditor = {
                         }
                     });
                 }
+function syncAllUISlidersFromState(params) {
+    if (!params) return;
 
+    const scalar = params.scalar || {};
+    const baseline = params.baseline || {};
+
+    // Helper to safely set slider values and update display text labels
+    const setSlider = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.value = val;
+            // Update adjacent label or value display if present
+            const valLabel = document.getElementById(`${id}Val`) || document.getElementById(`${id}Value`);
+            if (valLabel) valLabel.textContent = val;
+        }
+    };
+
+                    // Adjustments / Scalars
+                    if (scalar.exposure !== undefined) setSlider('exposureSlider', scalar.exposure);
+                    if (scalar.brightness !== undefined) setSlider('brightnessSlider', scalar.brightness);
+                    if (scalar.contrast !== undefined) setSlider('contrastSlider', scalar.contrast);
+                    if (scalar.saturation !== undefined) setSlider('saturationSlider', scalar.saturation);
+                    if (scalar.temperature !== undefined) setSlider('temperatureSlider', scalar.temperature);
+                    if (scalar.tint !== undefined) setSlider('tintSlider', scalar.tint);
+
+                    // Baseline Adjustments
+                    if (baseline.highlights !== undefined) setSlider('highlightsSlider', baseline.highlights);
+                    if (baseline.shadows !== undefined) setSlider('shadowsSlider', baseline.shadows);
+                    if (baseline.vibrance !== undefined) setSlider('vibranceSlider', baseline.vibrance);
+                    if (baseline.clarity !== undefined) setSlider('claritySlider', baseline.clarity);
+                    if (baseline.sharpen !== undefined) setSlider('sharpenSlider', baseline.sharpen);
+                    if (baseline.vignette !== undefined) setSlider('vignetteSlider', baseline.vignette);
+                }
+
+
+
+                
                 if (window.BaselineHistory && typeof window.BaselineHistory.getActiveState === 'function') {
                     const liveBaseline = window.BaselineHistory.getActiveState();
                     if (liveBaseline && liveBaseline.toolValues) {
@@ -128,12 +261,12 @@ window.CanvasEditor = {
                 const hasShadows    = baseline.shadows !== 0;
                 const hasVibrance   = baseline.vibrance !== 0;
 
-                const expFactor      = hasExposure ? Math.pow(2, scalar.exposure) : 1;
-                const bright         = scalar.brightness;
-                const cFactor        = hasContrast ? (259 * (scalar.contrast + 255)) / (255 * (259 - scalar.contrast)) : 1;
+                const expFactor        = hasExposure ? Math.pow(2, scalar.exposure) : 1;
+                const bright           = scalar.brightness;
+                const cFactor          = hasContrast ? (259 * (scalar.contrast + 255)) / (255 * (259 - scalar.contrast)) : 1;
                 const saturationFactor = (scalar.saturation + 100) / 100;
-                const tempOffset     = scalar.temperature * 0.4;
-                const tintOffset     = scalar.tint * 0.4;
+                const tempOffset       = scalar.temperature * 0.4;
+                const tintOffset       = scalar.tint * 0.4;
 
                 const highFactor     = baseline.highlights / 100;
                 const shadowFactor   = baseline.shadows / 100;
@@ -171,27 +304,21 @@ window.CanvasEditor = {
                         }
                     }
 
-
-                    // --- LIVE WINDOW CURVES INTERCEPT MATRIX PASS ---
                     if (window.CurvesManager && window.CurvesManager.activeState && window.CurvesManager.activeState.active) {
                         const lut = window.CurvesManager.activeState;
-                        // Remap extracted workspace configurations through active LUT arrays
                         if (lut.lutR) r = lut.lutR[Math.round(r > 255 ? 255 : (r < 0 ? 0 : r))];
                         if (lut.lutG) g = lut.lutG[Math.round(g > 255 ? 255 : (g < 0 ? 0 : g))];
                         if (lut.lutB) b = lut.lutB[Math.round(b > 255 ? 255 : (b < 0 ? 0 : b))];
                     }
-
 
                     data[i]     = r > 255 ? 255 : (r < 0 ? 0 : r);
                     data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g); 
                     data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
                 } 
 
-
                 if (typeof processColorGradingPixelData === 'function') {
                     imgData = processColorGradingPixelData(imgData);
                 }
-
 
                 if (configMatrix.filter && configMatrix.filter.type !== 'none' && window.FilterEngine) {
                     imgData = window.FilterEngine.process(imgData, configMatrix.filter.type, configMatrix.filter.intensity);
@@ -200,93 +327,81 @@ window.CanvasEditor = {
                 if (configMatrix.details && window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
                     imgData = window.DetailsEngine.process(imgData, configMatrix.details);
                 }
+                // Inside photo_editor.js -> applyEffectsPipeline():
 
-            // ================================================
-            // FIXED: ROBUST BLUR PROCESSING (LIVE & CONFIRMED)
-            // ================================================
-            // Pull directly from DOM elements first for perfect real-time accuracy, fall back to state matrix
-            const gaussianInput = document.getElementById('gaussianSlider');
-            const radialInput = document.getElementById('radialSlider');
-            
-            const radius = gaussianInput ? parseFloat(gaussianInput.value) : (configMatrix.blur?.gaussian || 0);
-            const intensity = radialInput ? parseInt(radialInput.value, 10) : (configMatrix.blur?.radial || 0);
+                const gaussianInput = document.getElementById('gaussianSlider');
+                const radialInput = document.getElementById('radialSlider');
 
-            if (radius > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyGaussian) {
-                if (window.CanvasEditor.isScrubbing) {
-                    const srcWidth = originalImg.naturalWidth || originalImg.width || targetCanvas.width;
-                    const runtimeRadius = Math.max(1, Math.round(radius * (imgData.width / srcWidth)));
-                    imgData = BlurFilters.applyGaussian(imgData, runtimeRadius);
-                } else {
-                    // Apply exact intended radius to full-res buffer on mouse release
+                const radius = gaussianInput ? parseFloat(gaussianInput.value) : (configMatrix.blur?.gaussian || 0);
+                const intensity = radialInput ? parseInt(radialInput.value, 10) : (configMatrix.blur?.radial || 0);
+
+                if (radius > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyGaussian) {
                     imgData = BlurFilters.applyGaussian(imgData, radius);
                 }
-            }
 
-            if (intensity > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyRadialDepth) {
-                imgData = BlurFilters.applyRadialDepth(imgData, intensity);
-            }
-
-            // --- PLUG DIRECTLY INTO SUBSEQUENT KERNELS WITHOUT REWRITING IMAGE DATA ---
-// --- PLUG DIRECTLY INTO SUBSEQUENT KERNELS WITHOUT REWRITING IMAGE DATA ---
-            if (baseline.sharpen !== 0) {
-                imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
-            }
-
-            if (baseline.clarity !== 0) {
-                imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
-            }
-
-            // --- FINAL CANVAS COMPOSITING PASS ---
-            if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
-                ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
-                
-                const tempRenderCanvas = document.createElement('canvas');
-                tempRenderCanvas.width = imgData.width;
-                tempRenderCanvas.height = imgData.height;
-                tempRenderCanvas.getContext('2d').putImageData(imgData, 0, 0);
-                
-                ctx.drawImage(tempRenderCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
-            } else {
-                if (targetCanvas.width !== imgData.width || targetCanvas.height !== imgData.height) {
-                    targetCanvas.width = imgData.width;
-                    targetCanvas.height = imgData.height;
+                if (intensity > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyRadialDepth) {
+                    imgData = BlurFilters.applyRadialDepth(imgData, intensity);
                 }
-                ctx.putImageData(imgData, 0, 0);
-            }
 
-            // --- VIGNETTE PASS ---
-            if (baseline.vignette !== 0) {
-                ctx.save();
-                ctx.globalCompositeOperation = 'source-over';
-                const cx = targetCanvas.width / 2; 
-                const cy = targetCanvas.height / 2;
-                const maxRadius = Math.sqrt(cx * cx + cy * cy);
-                const gradient = ctx.createRadialGradient(cx, cy, maxRadius * 0.2, cx, cy, maxRadius * 0.85);
-                const opacity = Math.min(1, Math.abs(baseline.vignette) / 100);
-                
-                if (baseline.vignette > 0) {
-                    gradient.addColorStop(0, 'rgba(0,0,0,0)'); 
-                    gradient.addColorStop(1, `rgba(0,0,0,${opacity * 0.85})`);
+                if (baseline.sharpen !== 0) {
+                    imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
+                }
+
+                if (baseline.clarity !== 0) {
+                    imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
+                }
+
+                if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
+                    ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+                    
+                    const tempRenderCanvas = document.createElement('canvas');
+                    tempRenderCanvas.width = imgData.width;
+                    tempRenderCanvas.height = imgData.height;
+                    tempRenderCanvas.getContext('2d').putImageData(imgData, 0, 0);
+                    
+                    ctx.drawImage(tempRenderCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
                 } else {
-                    gradient.addColorStop(0, 'rgba(255,255,255,0)'); 
-                    gradient.addColorStop(1, `rgba(255,255,255,${opacity * 0.85})`);
+                    if (targetCanvas.width !== imgData.width || targetCanvas.height !== imgData.height) {
+                        targetCanvas.width = imgData.width;
+                        targetCanvas.height = imgData.height;
+                    }
+                    ctx.putImageData(imgData, 0, 0);
                 }
-                ctx.fillStyle = gradient; 
-                ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
-                ctx.restore();
-            }
 
-            if (typeof window.CanvasEditor.redraw === "function") {
-                window.CanvasEditor.redraw();
+                if (baseline.vignette !== 0) {
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'source-over';
+                    const cx = targetCanvas.width / 2; 
+                    const cy = targetCanvas.height / 2;
+                    const maxRadius = Math.sqrt(cx * cx + cy * cy);
+                    const gradient = ctx.createRadialGradient(cx, cy, maxRadius * 0.2, cx, cy, maxRadius * 0.85);
+                    const opacity = Math.min(1, Math.abs(baseline.vignette) / 100);
+                    
+                    if (baseline.vignette > 0) {
+                        gradient.addColorStop(0, 'rgba(0,0,0,0)'); 
+                        gradient.addColorStop(1, `rgba(0,0,0,${opacity * 0.85})`);
+                    } else {
+                        gradient.addColorStop(0, 'rgba(255,255,255,0)'); 
+                        gradient.addColorStop(1, `rgba(255,255,255,${opacity * 0.85})`);
+                    }
+                    ctx.fillStyle = gradient; 
+                    ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+                    ctx.restore();
+                }
+
+                window.CanvasEditor.renderCanvasStack();
+
+                if (typeof window.CanvasEditor.redraw === "function") {
+                    window.CanvasEditor.redraw();
+                }
+                
+            } catch (error) {
+                console.error("Pipeline processing failure:", error);
+            } finally {
+                window.canvasRenderPending = false;
             }
-            
-        } catch (error) {
-            console.error("Pipeline processing failure:", error);
-        } finally {
-            window.canvasRenderPending = false;
-        }
-    });
-},
+        });
+    },
 
     _applySharpenKernel: (imgData, value) => {
         const w = imgData.width; const h = imgData.height;
@@ -387,7 +502,7 @@ redraw: () => {
         const ctx = canvas.getContext('2d');
         const state = window.imgState;
 
-        if (!state.img || !state.imageXCanvas) return;
+        if (!state.img && (!window.LayerManager || window.LayerManager.layers.length === 0)) return;
 
         const canvasArea = document.getElementById('canvas') || document.getElementById('canvasArea');
         const targetW = canvasArea ? (canvasArea.clientWidth || 800) : 800;
@@ -405,45 +520,63 @@ redraw: () => {
         ctx.imageSmoothingEnabled = !(window.CanvasEditor.isScrubbing && needsDownsample);
         ctx.imageSmoothingQuality = 'high';
 
-        ctx.save();
-        
-        const centerX = state.x + state.width / 2;
-        const centerY = state.y + state.height / 2;
-
-        ctx.translate(centerX, centerY);
-        ctx.rotate((state.rotation * Math.PI) / 180);
-        ctx.translate(-centerX, -centerY);
-
-        // SYNC AND DRAW LAYERS
         if (typeof window.initLayersEngine === 'function') {
             window.initLayersEngine();
         }
 
-        if (typeof window.drawLayersCompositeLoop === 'function') {
-            window.drawLayersCompositeLoop();
-        } else {
+        if (window.LayerManager && window.LayerManager.layers && window.LayerManager.layers.length > 0) {
+            window.CanvasEditor.renderCanvasStack();
+        } else if (state.imageXCanvas) {
+            ctx.save();
+            const centerX = state.x + state.width / 2;
+            const centerY = state.y + state.height / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(((state.rotation || 0) * Math.PI) / 180);
+            ctx.translate(-centerX, -centerY);
+
             ctx.drawImage(state.imageXCanvas, state.x, state.y, state.width, state.height);
+            ctx.restore();
         }
 
-        if (state.isSelected && window.InteractionManager) {
+        // --- DRAW SELECTION BORDER AND HANDLES INSIDE ROTATED MATRIX ---
+        if (state.isSelected) {
+            ctx.save();
+            const centerX = state.x + state.width / 2;
+            const centerY = state.y + state.height / 2;
+
+            ctx.translate(centerX, centerY);
+            ctx.rotate(((state.rotation || 0) * Math.PI) / 180);
+
+            // Bounding Box (centered around 0,0)
             ctx.strokeStyle = '#00bcd4'; 
             ctx.lineWidth = 2;
-            ctx.strokeRect(state.x, state.y, state.width, state.height);
+            ctx.strokeRect(-state.width / 2, -state.height / 2, state.width, state.height);
 
-            const handles = window.InteractionManager.getHandlePositions();
+            // Interactive Corner Handles (centered around 0,0)
+            const hs = state.handleSize || 10;
+            const halfW = state.width / 2;
+            const halfH = state.height / 2;
+
+            const handleCoords = [
+                { x: -halfW - hs / 2, y: -halfH - hs / 2 }, // Top-Left
+                { x: halfW - hs / 2,  y: -halfH - hs / 2 }, // Top-Right
+                { x: -halfW - hs / 2, y: halfH - hs / 2 },  // Bottom-Left
+                { x: halfW - hs / 2,  y: halfH - hs / 2 }   // Bottom-Right
+            ];
+
             ctx.fillStyle = '#ffffff';
             ctx.strokeStyle = '#00bcd4';
             ctx.lineWidth = 2;
 
-            for (let key in handles) {
-                const h = handles[key];
-                ctx.fillRect(h.x, h.y, state.handleSize, state.handleSize);
-                ctx.strokeRect(h.x, h.y, state.handleSize, state.handleSize);
-            }
+            handleCoords.forEach(h => {
+                ctx.fillRect(h.x, h.y, hs, hs);
+                ctx.strokeRect(h.x, h.y, hs, hs);
+            });
+
+            ctx.restore();
         }
-        
-        ctx.restore();
     },
+
     resetStateForCroppedImage: function(newWidth, newHeight) {
         const canvas = document.getElementById('editorCanvas');
         if (!canvas) return;
@@ -518,6 +651,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     offscreen.height = img.height;
                     window.imgState.imageXCanvas = offscreen;
 
+                    // --- ADD THIS BLOCK TO BIND TO BACKGROUND LAYER ---
+                    const bgLayer = window.LayersEditor ? window.LayersEditor.layers.find(l => l.id === 1) : null;
+                    if (bgLayer) {
+                        bgLayer.canvas = offscreen;
+                        bgLayer.sourceImage = img;
+                    }
+
+
                     if (window.CanvasEditor.resetStateForCroppedImage) {
                         window.CanvasEditor.resetStateForCroppedImage(displayW, displayH);
                     }
@@ -544,28 +685,22 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-// NEW FIXED: Debounced release listener to prevent high-value click crashes
-let pipelineDebounceTimeout = null;
+    let pipelineDebounceTimeout = null;
 
-document.addEventListener("change", (e) => {
-    if (e.target && (e.target.type === "range" || e.target.id === "transformWidthInput" || e.target.id === "transformHeightInput")) {
-        
-        // Clear any pending render calls stacked up by a sudden click action
-        if (pipelineDebounceTimeout) {
-            clearTimeout(pipelineDebounceTimeout);
-        }
-
-        // Delay the heavy full-res render by 40ms to let the UI thread breathe
-        pipelineDebounceTimeout = setTimeout(() => {
-            window.CanvasEditor.isScrubbing = false;
-            
-            // Force reset the render loop lock state if it got stuck during the click spike
-            window.canvasRenderPending = false; 
-
-            if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
-                window.CanvasEditor.applyEffectsPipeline();
+    document.addEventListener("change", (e) => {
+        if (e.target && (e.target.type === "range" || e.target.id === "transformWidthInput" || e.target.id === "transformHeightInput")) {
+            if (pipelineDebounceTimeout) {
+                clearTimeout(pipelineDebounceTimeout);
             }
-        }, 40); 
-    }
-});
+
+            pipelineDebounceTimeout = setTimeout(() => {
+                window.CanvasEditor.isScrubbing = false;
+                window.canvasRenderPending = false; 
+
+                if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+                    window.CanvasEditor.applyEffectsPipeline();
+                }
+            }, 40); 
+        }
+    });
 });
