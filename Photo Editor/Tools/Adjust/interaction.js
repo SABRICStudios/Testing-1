@@ -169,16 +169,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function handlePointerUp() {
-        if (isMixerActive()) return;
+   function handlePointerUp() {
+    if (isMixerActive()) return;
 
-        IM.isDragging = false;
-        IM.isResizing = false;
-        IM.resizeHandle = null;
-        if (window.CanvasEditor && typeof window.CanvasEditor.redraw === 'function') {
-            window.CanvasEditor.redraw();
+    if (IM.isDragging || IM.isResizing) {
+        // Sync active layer properties with imgState
+        const activeLayer = window.CanvasEditor ? window.CanvasEditor.getActiveLayer() : null;
+        if (activeLayer) {
+            activeLayer.x = window.imgState.x;
+            activeLayer.y = window.imgState.y;
+            activeLayer.width = window.imgState.width;
+            activeLayer.height = window.imgState.height;
         }
     }
+
+    IM.isDragging = false;
+    IM.isResizing = false;
+    IM.resizeHandle = null;
+    
+    if (window.CanvasEditor && typeof window.CanvasEditor.redraw === 'function') {
+        window.CanvasEditor.redraw();
+    }
+}
 
     // --- ENHANCEMENT: WRAP TOUCH LISTENERS TO STOP TOUCH EVENT PASS-THROUGHS ---
     canvas.addEventListener('mousedown', handlePointerDown, true); 
