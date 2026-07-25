@@ -6,11 +6,24 @@
 window.LayersEditor = {
     isOpen: false,
     activeLayerId: 1,
-    layerCounter: 1, // Auto-increments layer names (Layer 1, Layer 2...)
+    layerCounter: 1,
     layers: [
         { id: 1, name: 'Background Layer', type: 'image', opacity: 100, visible: true, isLocked: true }
-    ]
+    ],
+    getActiveLayer: function() {
+        const layer = this.layers.find(l => l.id === this.activeLayerId) || this.layers[0];
+        // Ensure background layer is safely mapped if canvas was initialized on imgState
+        if (layer && layer.id === 1 && !layer.canvas && window.imgState) {
+            layer.canvas = window.imgState.imageXCanvas;
+            layer.sourceImage = window.imgState.img;
+        }
+        return layer || null;
+    }
 };
+
+if (!window.LayerManager) {
+    window.LayerManager = window.LayersEditor;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     const toggleBtn = document.getElementById('layersToggleBtn') || document.querySelector('button[title*="Layers"]');
@@ -20,7 +33,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const opacityInput = document.getElementById('layerOpacity');
     const opacityVal = document.getElementById('layerOpacityVal');
     
-    const addBtn = document.getElementById('addNewLayerBtn') || document.getElementById('addLayerBtn');
+    const addTransparentBtn = document.getElementById('addTransparentLayerBtn');
+    const addBlankBtn = document.getElementById('addBlankLayerBtn');
+    const addImageBtn = document.getElementById('addImageLayerBtn');
+    const layerFileInput = document.getElementById('layerImageFileInput');
+
     const deleteBtn = document.getElementById('deleteLayerBtn');
     const upBtn = document.getElementById('moveLayerUpBtn');
     const downBtn = document.getElementById('moveLayerDownBtn');
@@ -146,18 +163,64 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
+            
             // Select Layer Handler
-            row.addEventListener('click', (e) => {
-                if (e.target.closest('.visibility-btn') || e.target.closest('.edit-name-btn') || e.target.classList.contains('layer-name-input')) return;
-                
-                window.LayersEditor.activeLayerId = layer.id;
-                
-                if (opacityInput) opacityInput.value = layer.opacity;
-                if (opacityVal) opacityVal.textContent = layer.opacity + '%';
-                
-                renderLayersList();
-            });
+// Select Layer Handler
+row.addEventListener('click', (e) => {
+    if (e.target.closest('.visibility-btn') || e.target.closest('.edit-name-btn') || e.target.classList.contains('layer-name-input')) return;
 
+    // 1. Save current active layer state & parameters
+    const currentActive = window.LayersEditor.getActiveLayer();
+    if (currentActive) {
+        currentActive.x = window.imgState.x;
+        currentActive.y = window.imgState.y;
+        currentActive.width = window.imgState.width;
+        currentActive.height = window.imgState.height;
+        currentActive.rotation = window.imgState.rotation;
+        
+        if (window.HistoryManager && typeof window.HistoryManager.getCurrentParameters === 'function') {
+            currentActive.parameters = window.HistoryManager.getCurrentParameters();
+        }
+    }
+
+    // 2. Switch Active Layer ID
+    window.LayersEditor.activeLayerId = layer.id;
+    const newActive = window.LayersEditor.getActiveLayer();
+
+    // 3. Restore Layer Transforms to imgState
+    window.imgState.x = layer.x !== undefined ? layer.x : 0;
+    window.imgState.y = layer.y !== undefined ? layer.y : 0;
+    window.imgState.width = layer.width || (layer.canvas ? layer.canvas.width : window.imgState.width);
+    window.imgState.height = layer.height || (layer.canvas ? layer.canvas.height : window.imgState.height);
+    window.imgState.rotation = layer.rotation !== undefined ? layer.rotation : 0;
+
+    // 4. Ensure layer has default parameters if none exist
+    if (!layer.parameters) {
+        layer.parameters = JSON.parse(JSON.stringify(window.HistoryManager.defaultState));
+    }
+
+    // 5. Inject newly selected layer's parameters into HistoryManager timeline pointer
+    if (window.HistoryManager && window.HistoryManager.historyStack[window.HistoryManager.currentIndex]) {
+        window.HistoryManager.historyStack[window.HistoryManager.currentIndex].state = JSON.parse(JSON.stringify(layer.parameters));
+        window.HistoryManager.syncSubManagersToCurrentCheckpoint();
+    }
+
+    // 6. Sync UI Sliders (Exposure, Brightness, Opacity, etc.)
+    if (opacityInput) {
+        opacityInput.value = (layer.opacity <= 1 ? layer.opacity * 100 : layer.opacity);
+    }
+    if (opacityVal) {
+        opacityVal.textContent = Math.round(opacityInput ? opacityInput.value : 100) + '%';
+    }
+
+    // Call helper to force UI sliders to reflect current parameters
+    if (typeof syncAllUISlidersFromState === 'function') {
+        syncAllUISlidersFromState(layer.parameters);
+    }
+
+    renderLayersList();
+    requestLayersComposite();
+});
             // Visibility Toggle Handler
             const visBtn = row.querySelector('.visibility-btn');
             visBtn?.addEventListener('click', (e) => {
@@ -219,35 +282,141 @@ document.addEventListener('DOMContentLoaded', () => {
             
             let activeLayer = window.LayersEditor.layers.find(l => l.id === window.LayersEditor.activeLayerId);
             if (activeLayer) {
-                activeLayer.opacity = val;
+                activeLayer.opacity = val / 100; // Normalized opacity (0.0 to 1.0) for canvas composite
                 requestLayersComposite();
             }
         });
     }
 
     // 5. Sequential Layer Creation (Layer 1, Layer 2...)
-    addBtn?.addEventListener('click', () => {
-        const newId = Date.now();
-        const layerName = `Layer ${window.LayersEditor.layerCounter++}`;
-        
-        window.LayersEditor.layers.unshift({
-            id: newId,
-            name: layerName,
-            type: 'text',
-            opacity: 100,
-            visible: true,
-            isLocked: false
-        });
-        
-        window.LayersEditor.activeLayerId = newId;
-        
-        if (typeof window.createEngineLayerTrack === 'function') {
-            window.createEngineLayerTrack(newId);
-        }
-        
-        renderLayersList();
-        requestLayersComposite();
+// Helper function to create layers based on type ('transparent' | 'blank' | 'image')
+   // Helper function to create layers based on type ('transparent' | 'blank' | 'image')
+function createNewLayer(type = 'transparent', options = {}) {
+    const newId = Date.now();
+    const editorCanvas = document.getElementById('editorCanvas');
+    
+    // Canvas target bounds
+    const canvasW = editorCanvas ? editorCanvas.width : (window.imgState?.width || 800);
+    const canvasH = editorCanvas ? editorCanvas.height : (window.imgState?.height || 600);
+
+    let layerCanvas = document.createElement('canvas');
+    let sourceImg = null;
+    let defaultName = `Layer ${window.LayersEditor.layerCounter++}`;
+    
+    let layerX = 0;
+    let layerY = 0;
+    let layerW = canvasW;
+    let layerH = canvasH;
+
+    if (type === 'blank') {
+        layerCanvas.width = canvasW;
+        layerCanvas.height = canvasH;
+        const ctx = layerCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasW, canvasH);
+        defaultName = `White Canvas ${window.LayersEditor.layerCounter - 1}`;
+
+        sourceImg = new Image();
+        sourceImg.src = layerCanvas.toDataURL();
+
+    } else if (type === 'image' && options.imgElement) {
+        const img = options.imgElement;
+        const imgW = img.naturalWidth || img.width;
+        const imgH = img.naturalHeight || img.height;
+
+        // Maintain Native Image Aspect Ratio (No Stretching)
+        layerCanvas.width = imgW;
+        layerCanvas.height = imgH;
+        const ctx = layerCanvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, imgW, imgH);
+
+        // Fit proportionally within Canvas
+        const scale = Math.min(canvasW / imgW, canvasH / imgH, 1.0);
+        layerW = Math.round(imgW * scale);
+        layerH = Math.round(imgH * scale);
+
+        // Center on Canvas
+        layerX = Math.round((canvasW - layerW) / 2);
+        layerY = Math.round((canvasH - layerH) / 2);
+
+        defaultName = options.name || `Image Layer ${window.LayersEditor.layerCounter - 1}`;
+        sourceImg = img;
+
+    } else if (type === 'transparent') {
+        layerCanvas.width = canvasW;
+        layerCanvas.height = canvasH;
+        defaultName = `Transparent Layer ${window.LayersEditor.layerCounter - 1}`;
+    }
+
+    const originalCanvas = document.createElement('canvas');
+    originalCanvas.width = layerCanvas.width;
+    originalCanvas.height = layerCanvas.height;
+    originalCanvas.getContext('2d').drawImage(layerCanvas, 0, 0);
+
+    const newLayer = {
+        id: newId,
+        name: options.name || defaultName,
+        type: type,
+        opacity: 1.0,
+        visible: true,
+        isLocked: false,
+        canvas: layerCanvas,
+        originalCanvas: originalCanvas,
+        sourceImage: sourceImg,
+        x: layerX,
+        y: layerY,
+        width: layerW,
+        height: layerH,
+        rotation: 0,
+        parameters: window.HistoryManager ? JSON.parse(JSON.stringify(window.HistoryManager.getCurrentParameters())) : {}
+    };
+
+    window.LayersEditor.layers.unshift(newLayer);
+    window.LayersEditor.activeLayerId = newId;
+
+    // Direct Sync active state so selection outline aligns immediately
+    window.imgState.x = layerX;
+    window.imgState.y = layerY;
+    window.imgState.width = layerW;
+    window.imgState.height = layerH;
+    window.imgState.rotation = 0;
+
+    renderLayersList();
+    requestLayersComposite();
+}
+
+    // 5. Layer Type Action Handlers
+    addTransparentBtn?.addEventListener('click', () => {
+        createNewLayer('transparent');
     });
+
+// Blank / White Canvas Button Click
+    addBlankBtn?.addEventListener('click', () => {
+        createNewLayer('blank');
+    });
+
+    if (addImageBtn && layerFileInput) {
+        addImageBtn.addEventListener('click', () => layerFileInput.click());
+
+        layerFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    createNewLayer('image', {
+                        imgElement: img,
+                        name: file.name
+                    });
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+            layerFileInput.value = ''; // Reset input selection
+        });
+    }
 
     // 6. Layer Deletion
     deleteBtn?.addEventListener('click', () => {
@@ -296,7 +465,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function requestLayersComposite() {
-        if (typeof window.drawLayersCompositeLoop === 'function') {
+        if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+            window.CanvasEditor.applyEffectsPipeline();
+        } else if (typeof window.drawLayersCompositeLoop === 'function') {
             window.drawLayersCompositeLoop();
         } else if (window.CanvasEditor && typeof window.CanvasEditor.redraw === 'function') {
             window.CanvasEditor.redraw();
