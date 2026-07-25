@@ -77,31 +77,42 @@ const CropTool = {
     activateModal() {
         if (!this.modal || !this.cropCanvas) return;
 
-        console.log("Opening Crop Workspace...");
+        // 1. Fetch the active layer instead of forcing global imgState
+        const activeLayer = window.LayerManager && typeof window.LayerManager.getActiveLayer === 'function' 
+            ? window.LayerManager.getActiveLayer() 
+            : null;
+
+        if (!activeLayer || !activeLayer.canvas) {
+            console.warn("No active layer selected to crop.");
+            return;
+        }
+
+        console.log(`Opening Crop Workspace for layer: ${activeLayer.name}`);
         
-        // 1. Sync the modal workspace canvas scale perfectly to match your current image state
-        this.cropCanvas.width = this.mainCanvas.width;
-        this.cropCanvas.height = this.mainCanvas.height;
+        // 2. Set modal crop canvas dimensions to match the active layer's current canvas size
+        this.cropCanvas.width = activeLayer.canvas.width;
+        this.cropCanvas.height = activeLayer.canvas.height;
 
-        // 2. Clone the visual pixel array data directly into the modal workspace view canvas
-        this.cropCtx.drawImage(this.mainCanvas, 0, 0);
+        // 3. Draw ONLY the active layer's canvas into the crop workspace
+        this.cropCtx.clearRect(0, 0, this.cropCanvas.width, this.cropCanvas.height);
+        this.cropCtx.drawImage(activeLayer.canvas, 0, 0);
 
-        // 3. Cache a clean base image state snapshot before rendering any markup UI shapes on it
+        // 4. Cache clean base snapshot of the selected layer
         this.backupImageData = this.cropCtx.getImageData(0, 0, this.cropCanvas.width, this.cropCanvas.height);
 
         // Reset default cropping bounding metrics
         this.cropBox = { x: 0, y: 0, width: 0, height: 0 };
         this.cropCanvas.style.cursor = 'crosshair';
 
-        // 4. Reveal the hidden workspace modal layer layout container to screen viewports
+        // 5. Reveal workspace modal layout
         this.modal.style.display = 'flex';
 
-        // 5. Mount UI input listener attachments to track mouse drawing over interactive view
+        // 6. Mount mouse input listeners
         this.cropCanvas.addEventListener('mousedown', this.boundMouseDown);
         this.cropCanvas.addEventListener('mousemove', this.boundMouseMove);
         window.addEventListener('mouseup', this.boundMouseUp);
 
-        // 6. Mount Touch input listeners for mobile devices ({ passive: false } allows preventDefault to stop scrolling)
+        // 7. Mount touch input listeners
         this.cropCanvas.addEventListener('touchstart', this.boundTouchStart, { passive: false });
         this.cropCanvas.addEventListener('touchmove', this.boundTouchMove, { passive: false });
         window.addEventListener('touchend', this.boundTouchEnd);
@@ -113,7 +124,7 @@ const CropTool = {
         // Hide overlay container
         this.modal.style.display = 'none';
 
-        // Strip drawing listeners away so they aren't leaking events processing in the background
+        // Strip drawing listeners
         this.cropCanvas.removeEventListener('mousedown', this.boundMouseDown);
         this.cropCanvas.removeEventListener('mousemove', this.boundMouseMove);
         window.removeEventListener('mouseup', this.boundMouseUp);
@@ -129,7 +140,6 @@ const CropTool = {
     getMousePos(e) {
         const rect = this.cropCanvas.getBoundingClientRect();
         
-        // Extract client positions based on mouse vs touch input event type
         let clientX = e.clientX;
         let clientY = e.clientY;
 
@@ -163,26 +173,26 @@ const CropTool = {
         this.currentX = pos.x;
         this.currentY = pos.y;
 
-        // Restore clean backup snapshot to clear previous overlay boxes
+        // Restore clean backup snapshot
         this.cropCtx.putImageData(this.backupImageData, 0, 0);
 
-        // Create dark outer frame matte overlay tint
+        // Dark outer frame matte overlay
         this.cropCtx.fillStyle = 'rgba(0, 0, 0, 0.65)';
         this.cropCtx.fillRect(0, 0, this.cropCanvas.width, this.cropCanvas.height);
 
-        // Normalize coordinates on-the-fly to ensure values remain positive regardless of drag direction
+        // Normalize coordinates
         const renderX = Math.min(this.startX, this.currentX);
         const renderY = Math.min(this.startY, this.currentY);
         const renderWidth = Math.abs(this.currentX - this.startX);
         const renderHeight = Math.abs(this.currentY - this.startY);
         
-        // Clear transparency window for inside selection target focus zone
+        // Clear selection target area
         this.cropCtx.save();
         this.cropCtx.globalCompositeOperation = 'destination-out';
         this.cropCtx.fillRect(renderX, renderY, renderWidth, renderHeight);
         this.cropCtx.restore();
 
-        // Draw explicit bright white crop boundary line layout guide box rules
+        // White border line overlay
         this.cropCtx.strokeStyle = '#ffffff';
         this.cropCtx.lineWidth = 2;
         this.cropCtx.setLineDash([6, 4]);
@@ -193,17 +203,14 @@ const CropTool = {
         if (!this.isDrawing) return;
         this.isDrawing = false;
 
-        // Final normalization of interactive boundary geometry coordinates
         const x = Math.min(this.startX, this.currentX);
         const y = Math.min(this.startY, this.currentY);
         const width = Math.abs(this.currentX - this.startX);
         const height = Math.abs(this.currentY - this.startY);
 
-        // If the box selection drag area size is valid, log the region parameters
         if (width > 15 && height > 15) {
             this.cropBox = { x, y, width, height };
         } else {
-            // Revert view canvas context visuals if click was an accident/too tiny
             this.cropCtx.putImageData(this.backupImageData, 0, 0);
             this.cropBox = { x: 0, y: 0, width: 0, height: 0 };
         }
@@ -211,12 +218,12 @@ const CropTool = {
 
     // Mobile Bridge Handlers
     onTouchStart(e) {
-        e.preventDefault(); // Lock mobile screen context window scrolling
+        e.preventDefault();
         this.onMouseDown(e);
     },
 
     onTouchMove(e) {
-        e.preventDefault(); // Keep mobile touch inputs bound explicitly to canvas drawing
+        e.preventDefault();
         this.onMouseMove(e);
     },
 
@@ -227,78 +234,109 @@ const CropTool = {
     executeCrop() {
         const { x, y, width, height } = this.cropBox;
 
-        // Prevent execution on accidental tiny or invalid clicks
         if (width <= 15 || height <= 15) {
             console.warn("No valid crop area selected.");
             return;
         }
 
-        if (!window.imgState || !window.imgState.img) return;
+        // 1. Identify current active target layer
+        const activeLayer = window.LayerManager && typeof window.LayerManager.getActiveLayer === 'function'
+            ? window.LayerManager.getActiveLayer()
+            : null;
 
-        // 1. Get the real working source image (the actual pixel asset before filters)
-        const srcImg = window.imgState.img;
+        if (!activeLayer) return;
 
-        // 2. Calculate the scaling ratio between the modal canvas and the real source image
-        const scaleX = srcImg.width / this.cropCanvas.width;
-        const scaleY = srcImg.height / this.cropCanvas.height;
+        // Determine source image/canvas context for this layer
+        const sourceAsset = activeLayer.sourceImage || activeLayer.originalCanvas || activeLayer.canvas;
+        if (!sourceAsset) return;
 
-        // 3. Map modal crop coordinates back to real, absolute source image pixels
-        const realX = x * scaleX;
-        const realY = y * scaleY;
-        const realWidth = width * scaleX;
-        const realHeight = height * scaleY;
+        // 2. Map coordinates relative to the underlying source asset
+        const scaleX = (sourceAsset.naturalWidth || sourceAsset.width) / this.cropCanvas.width;
+        const scaleY = (sourceAsset.naturalHeight || sourceAsset.height) / this.cropCanvas.height;
 
-        // 4. Create an isolated offscreen buffer to perform the actual pixel slice extraction
+        const realX = Math.round(x * scaleX);
+        const realY = Math.round(y * scaleY);
+        const realWidth = Math.round(width * scaleX);
+        const realHeight = Math.round(height * scaleY);
+
+        // 3. Perform pixel slice on offscreen buffer
         const sliceCanvas = document.createElement('canvas');
         sliceCanvas.width = realWidth;
         sliceCanvas.height = realHeight;
         const sliceCtx = sliceCanvas.getContext('2d');
 
-        // Extract the selected bounding box from the original image asset
         sliceCtx.drawImage(
-            srcImg,
-            realX, realY, realWidth, realHeight, // Source box coordinates
-            0, 0, realWidth, realHeight          // Target canvas placement
+            sourceAsset,
+            realX, realY, realWidth, realHeight,
+            0, 0, realWidth, realHeight
         );
 
-        // 5. Convert the canvas slice back into an Image Element asset
+        // 4. Update the active layer canvas assets
         const croppedImageElement = new Image();
         croppedImageElement.onload = () => {
-            const finalW = croppedImageElement.width;
-            const finalH = croppedImageElement.height;
+            // Update active layer properties
+            activeLayer.canvas.width = realWidth;
+            activeLayer.canvas.height = realHeight;
 
-            // Update core state engine references
-            window.imgState.img = croppedImageElement;
+            // Re-render layer canvas
+            const lCtx = activeLayer.canvas.getContext('2d');
+            lCtx.clearRect(0, 0, realWidth, realHeight);
+            lCtx.drawImage(croppedImageElement, 0, 0);
 
-            // Safely map raw source pixels to a fresh scaled viewport box layout
-            if (window.CanvasEditor && typeof window.CanvasEditor.resetStateForCroppedImage === 'function') {
-                window.CanvasEditor.resetStateForCroppedImage(finalW, finalH);
+            // Update layer backups & state
+            if (activeLayer.originalCanvas) {
+                activeLayer.originalCanvas.width = realWidth;
+                activeLayer.originalCanvas.height = realHeight;
+                activeLayer.originalCanvas.getContext('2d').drawImage(croppedImageElement, 0, 0);
+            }
+            activeLayer.sourceImage = croppedImageElement;
+            activeLayer.width = realWidth;
+            activeLayer.height = realHeight;
+
+            // Shift layer position relative to canvas display
+            activeLayer.x = (activeLayer.x || 0) + (x * (window.imgState.width / this.cropCanvas.width));
+            activeLayer.y = (activeLayer.y || 0) + (y * (window.imgState.height / this.cropCanvas.height));
+
+            // Sync global state if active layer is the Background layer (ID 1)
+            if (activeLayer.id === 1) {
+                window.imgState.img = croppedImageElement;
+                window.imgState.width = realWidth;
+                window.imgState.height = realHeight;
+                if (window.imgState.imageXCanvas) {
+                    window.imgState.imageXCanvas.width = realWidth;
+                    window.imgState.imageXCanvas.height = realHeight;
+                }
+            } else if (activeLayer.id === window.LayerManager.activeLayerId) {
+                window.imgState.width = realWidth;
+                window.imgState.height = realHeight;
             }
 
-            // Resize the offscreen image adjustments buffer framework layers
-            if (window.imgState.imageXCanvas) {
-                window.imgState.imageXCanvas.width = finalW;
-                window.imgState.imageXCanvas.height = finalH;
+            // Trigger global composite recalculation
+            if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+                window.CanvasEditor.applyEffectsPipeline();
+            } else {
+                window.dispatchEvent(new CustomEvent('editorHistoryChanged'));
             }
-
-            // Flush out old tracking snapshots that belonged to the pre-cropped dimensions
-            if (window.HistoryManager) {
-                window.HistoryManager.clearToDefaultStates();
-            }
-
-            // Dispatch global event notification cascade to execute effects and repaint
-            window.dispatchEvent(new CustomEvent('editorHistoryChanged'));
         };
 
-        // Convert slice pixels into a source image data link to trigger load callback mechanics
         croppedImageElement.src = sliceCanvas.toDataURL();
 
-        // Close out modal interface overlay workspace smoothly
+        // 5. Commit crop state record to History stack
+        if (window.HistoryManager && typeof window.HistoryManager.commitCropAction === 'function') {
+            window.HistoryManager.commitCropAction(`Crop ${activeLayer.name}`, {
+                x: x / this.cropCanvas.width,
+                y: y / this.cropCanvas.height,
+                width: width / this.cropCanvas.width,
+                height: height / this.cropCanvas.height
+            });
+        }
+
+        // Close modal workspace
         this.closeModal();
     }
 };
 
-// Fire up core modules once DOM rendering completes
+// Initialize modules on DOM load
 document.addEventListener("DOMContentLoaded", () => {
-    CropTool.init('editorCanvas'); // Matches your main workspace canvas ID
+    CropTool.init('editorCanvas');
 });
