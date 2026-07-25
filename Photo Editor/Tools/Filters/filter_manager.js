@@ -182,29 +182,70 @@ openFilterSession() {
         }
     }
 
-    confirmFilterTransaction() {
-        if (window.BaselineFilterHistory) {
-            const filterName = this.activeFilter.charAt(0).toUpperCase() + this.activeFilter.slice(1);
-            window.BaselineFilterHistory.commitToMaster(`Filter: ${filterName}`);
+confirmFilterTransaction() {
+    const activeLayer = window.CanvasEditor ? window.CanvasEditor.getActiveLayer() : null;
+
+    if (activeLayer) {
+        // Ensure parameters object exists on the active layer
+        if (!activeLayer.parameters) {
+            activeLayer.parameters = {};
         }
-        this.resetUIComponents();
+
+        // 1. Persist the filter configuration directly into the selected layer's parameter state
+        activeLayer.parameters.filter = {
+            type: this.activeFilter,
+            intensity: this.intensity
+        };
     }
 
-    discardFilterTransaction() {
-        if (window.HistoryManager) {
-            const confirmedMatrix = window.HistoryManager.getCurrentParameters();
-            if (confirmedMatrix && confirmedMatrix.filter) {
-                this.activeFilter = confirmedMatrix.filter.type || 'none';
-                this.intensity = confirmedMatrix.filter.intensity !== undefined ? confirmedMatrix.filter.intensity : 100;
-                
-                if (window.BaselineFilterHistory) {
-                    window.BaselineFilterHistory.syncState(confirmedMatrix.filter);
-                }
-            }
-        }
-        window.dispatchEvent(new CustomEvent('editorHistoryChanged'));
-        this.resetUIComponents();
+    // 2. Commit to global history manager if present
+    if (window.BaselineFilterHistory) {
+        const filterName = this.activeFilter.charAt(0).toUpperCase() + this.activeFilter.slice(1);
+        window.BaselineFilterHistory.commitToMaster(`Filter: ${filterName}`);
     }
+
+    // 3. Force the canvas engine to apply the pipeline and immediately redraw the layer stack
+    if (window.CanvasEditor) {
+        if (typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+            window.CanvasEditor.applyEffectsPipeline();
+        } else if (typeof window.CanvasEditor.renderCanvasStack === 'function') {
+            window.CanvasEditor.renderCanvasStack();
+        }
+    }
+
+    this.resetUIComponents();
+}
+
+discardFilterTransaction() {
+    const activeLayer = window.CanvasEditor ? window.CanvasEditor.getActiveLayer() : null;
+
+    if (activeLayer && activeLayer.parameters) {
+        // Reset local manager state from the active layer's saved parameters
+        const savedFilter = activeLayer.parameters.filter || { type: 'none', intensity: 100 };
+        this.activeFilter = savedFilter.type;
+        this.intensity = savedFilter.intensity;
+    } else if (window.HistoryManager) {
+        const confirmedMatrix = window.HistoryManager.getCurrentParameters();
+        if (confirmedMatrix && confirmedMatrix.filter) {
+            this.activeFilter = confirmedMatrix.filter.type || 'none';
+            this.intensity = confirmedMatrix.filter.intensity !== undefined ? confirmedMatrix.filter.intensity : 100;
+        }
+    }
+
+    if (window.BaselineFilterHistory) {
+        window.BaselineFilterHistory.syncState({
+            type: this.activeFilter,
+            intensity: this.intensity
+        });
+    }
+
+    // Re-render pipeline with restored state
+    if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+        window.CanvasEditor.applyEffectsPipeline();
+    }
+
+    this.resetUIComponents();
+}
 
     resetUIComponents() {
         if (this.filterGallery) {
