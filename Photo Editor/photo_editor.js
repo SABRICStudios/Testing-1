@@ -139,7 +139,7 @@ renderCanvasStack: () => {
         return cleanCanvas;
     },
 
-    applyEffectsPipeline: () => {
+applyEffectsPipeline: () => {
         if (window.canvasRenderPending) return;
 
         const activeLayer = window.CanvasEditor.getActiveLayer();
@@ -194,6 +194,15 @@ renderCanvasStack: () => {
                     imgData = ctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
                 }
 
+                // --- CAPTURE PRISTINE UNTOUCHED BACKING PIXELS FOR SELECTION BLENDING ---
+                // Match pristine canvas resolution to imgData so array dimensions never mismatch during scrubbing
+                const pristineCanvas = document.createElement('canvas');
+                pristineCanvas.width = imgData.width;
+                pristineCanvas.height = imgData.height;
+                const pristineCtx = pristineCanvas.getContext('2d');
+                pristineCtx.drawImage(sourceImg, 0, 0, pristineCanvas.width, pristineCanvas.height);
+                const pristineImageData = pristineCtx.getImageData(0, 0, pristineCanvas.width, pristineCanvas.height);
+
                 let scalar = { ...(configMatrix.scalar || { exposure: 0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 }) };
                 let baseline = { ...(configMatrix.baseline || { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 }) };
 
@@ -205,43 +214,7 @@ renderCanvasStack: () => {
                         }
                     });
                 }
-function syncAllUISlidersFromState(params) {
-    if (!params) return;
 
-    const scalar = params.scalar || {};
-    const baseline = params.baseline || {};
-
-    // Helper to safely set slider values and update display text labels
-    const setSlider = (id, val) => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.value = val;
-            // Update adjacent label or value display if present
-            const valLabel = document.getElementById(`${id}Val`) || document.getElementById(`${id}Value`);
-            if (valLabel) valLabel.textContent = val;
-        }
-    };
-
-                    // Adjustments / Scalars
-                    if (scalar.exposure !== undefined) setSlider('exposureSlider', scalar.exposure);
-                    if (scalar.brightness !== undefined) setSlider('brightnessSlider', scalar.brightness);
-                    if (scalar.contrast !== undefined) setSlider('contrastSlider', scalar.contrast);
-                    if (scalar.saturation !== undefined) setSlider('saturationSlider', scalar.saturation);
-                    if (scalar.temperature !== undefined) setSlider('temperatureSlider', scalar.temperature);
-                    if (scalar.tint !== undefined) setSlider('tintSlider', scalar.tint);
-
-                    // Baseline Adjustments
-                    if (baseline.highlights !== undefined) setSlider('highlightsSlider', baseline.highlights);
-                    if (baseline.shadows !== undefined) setSlider('shadowsSlider', baseline.shadows);
-                    if (baseline.vibrance !== undefined) setSlider('vibranceSlider', baseline.vibrance);
-                    if (baseline.clarity !== undefined) setSlider('claritySlider', baseline.clarity);
-                    if (baseline.sharpen !== undefined) setSlider('sharpenSlider', baseline.sharpen);
-                    if (baseline.vignette !== undefined) setSlider('vignetteSlider', baseline.vignette);
-                }
-
-
-
-                
                 if (window.BaselineHistory && typeof window.BaselineHistory.getActiveState === 'function') {
                     const liveBaseline = window.BaselineHistory.getActiveState();
                     if (liveBaseline && liveBaseline.toolValues) {
@@ -251,6 +224,17 @@ function syncAllUISlidersFromState(params) {
 
                 let data = imgData.data;
                 const len = data.length;
+                const currentW = imgData.width;
+                const currentH = imgData.height;
+
+             // --- SELECTION MASK RESOLUTION ---
+                // Active mask evaluates regardless of full screen or minimized state
+                const selectionMask = window.selectionProcessingActive ? window.activeSelectionMask : null;
+                const isSelectionActive = !!(window.selectionProcessingActive && selectionMask && selectionMask.data && selectionMask.data.length > 0);
+                const maskData = isSelectionActive ? selectionMask.data : null;
+                const maskWidth = isSelectionActive ? selectionMask.width : currentW;
+                const maskHeight = isSelectionActive ? selectionMask.height : currentH;
+                const bounds = isSelectionActive ? selectionMask.bounds : null;
 
                 const hasExposure   = scalar.exposure !== 0;
                 const hasBrightness = scalar.brightness !== 0;
@@ -272,16 +256,51 @@ function syncAllUISlidersFromState(params) {
                 const shadowFactor   = baseline.shadows / 100;
                 const vibFactor      = baseline.vibrance / 100;
 
+              // --- PRIMARY PIXEL EDITING LOOP (WITH SELECTION MASK BLENDING) ---
                 for (let i = 0; i < len; i += 4) {
-                    let r = data[i]; let g = data[i + 1]; let b = data[i + 2];
+                    const origR = data[i];
+                    const origG = data[i + 1];
+                    const origB = data[i + 2];
 
+                    let maskAlpha = 1.0; // Default to full effect strength across the entire canvas
+
+if (isSelectionActive && maskData) {
+                        const pixelIdx = i / 4;
+                        const px = pixelIdx % currentW;
+                        const py = Math.floor(pixelIdx / currentW);
+
+                        const maskX = Math.floor((px / currentW) * maskWidth);
+                        const maskY = Math.floor((py / currentH) * maskHeight);
+
+                        // Fast bounding check: Skip pixel modifications if outside selection box
+                        if (bounds && (maskX < bounds.x || maskX >= bounds.x + bounds.width || maskY < bounds.y || maskY >= bounds.y + bounds.height)) {
+                            maskAlpha = 0;
+                        } else {
+                            const maskIdx = (maskY * maskWidth + maskX) * 4;
+                            maskAlpha = (maskData[maskIdx + 3] || maskData[maskIdx]) / 255;
+                        }
+
+                        // If pixel is outside the active selection mask, leave original data intact and skip pipeline
+                        if (maskAlpha === 0) {
+                            data[i]     = origR;
+                            data[i + 1] = origG;
+                            data[i + 2] = origB;
+                            continue;
+                        }
+                    }
+
+                    let r = origR; let g = origG; let b = origB;
+
+                    // --- APPLY ADJUSTMENT PIPELINE ---
                     if (hasExposure)   { r *= expFactor; g *= expFactor; b *= expFactor; }
                     if (hasBrightness) { r += bright; g += bright; b += bright; }
                     if (hasContrast)   { r = cFactor * (r - 128) + 128; g = cFactor * (g - 128) + 128; b = cFactor * (b - 128) + 128; }
                     
                     if (hasSaturation) {
                         const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                        r = luma + (r - luma) * saturationFactor; g = luma + (g - luma) * saturationFactor; b = luma + (b - luma) * saturationFactor;
+                        r = luma + (r - luma) * saturationFactor; 
+                        g = luma + (g - luma) * saturationFactor; 
+                        b = luma + (b - luma) * saturationFactor;
                     }
                     if (hasTempTint) { r += tempOffset; g += tintOffset; b -= tempOffset; }
 
@@ -311,23 +330,31 @@ function syncAllUISlidersFromState(params) {
                         if (lut.lutB) b = lut.lutB[Math.round(b > 255 ? 255 : (b < 0 ? 0 : b))];
                     }
 
-                    data[i]     = r > 255 ? 255 : (r < 0 ? 0 : r);
-                    data[i + 1] = g > 255 ? 255 : (g < 0 ? 0 : g); 
-                    data[i + 2] = b > 255 ? 255 : (b < 0 ? 0 : b);
-                } 
+                    // Clamp intermediate values
+                    r = r > 255 ? 255 : (r < 0 ? 0 : r);
+                    g = g > 255 ? 255 : (g < 0 ? 0 : g); 
+                    b = b > 255 ? 255 : (b < 0 ? 0 : b);
+
+                    // --- MASK ALPHA BLENDING ---
+                    // Linearly interpolate between untouched pixel and adjusted pixel based on selection mask strength
+                    data[i]     = Math.round(origR + (r - origR) * maskAlpha);
+                    data[i + 1] = Math.round(origG + (g - origG) * maskAlpha);
+                    data[i + 2] = Math.round(origB + (b - origB) * maskAlpha);
+                }
+
+                let processedImgData = imgData;
 
                 if (typeof processColorGradingPixelData === 'function') {
-                    imgData = processColorGradingPixelData(imgData);
+                    processedImgData = processColorGradingPixelData(processedImgData);
                 }
 
                 if (configMatrix.filter && configMatrix.filter.type !== 'none' && window.FilterEngine) {
-                    imgData = window.FilterEngine.process(imgData, configMatrix.filter.type, configMatrix.filter.intensity);
+                    processedImgData = window.FilterEngine.process(processedImgData, configMatrix.filter.type, configMatrix.filter.intensity);
                 }
 
                 if (configMatrix.details && window.DetailsEngine && typeof window.DetailsEngine.process === 'function') {
-                    imgData = window.DetailsEngine.process(imgData, configMatrix.details);
+                    processedImgData = window.DetailsEngine.process(processedImgData, configMatrix.details);
                 }
-                // Inside photo_editor.js -> applyEffectsPipeline():
 
                 const gaussianInput = document.getElementById('gaussianSlider');
                 const radialInput = document.getElementById('radialSlider');
@@ -336,20 +363,23 @@ function syncAllUISlidersFromState(params) {
                 const intensity = radialInput ? parseInt(radialInput.value, 10) : (configMatrix.blur?.radial || 0);
 
                 if (radius > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyGaussian) {
-                    imgData = BlurFilters.applyGaussian(imgData, radius);
+                    processedImgData = BlurFilters.applyGaussian(processedImgData, radius);
                 }
 
                 if (intensity > 0 && typeof BlurFilters !== 'undefined' && BlurFilters.applyRadialDepth) {
-                    imgData = BlurFilters.applyRadialDepth(imgData, intensity);
+                    processedImgData = BlurFilters.applyRadialDepth(processedImgData, intensity);
                 }
 
                 if (baseline.sharpen !== 0) {
-                    imgData = window.CanvasEditor._applySharpenKernel(imgData, baseline.sharpen);
+                    processedImgData = window.CanvasEditor._applySharpenKernel(processedImgData, baseline.sharpen);
                 }
 
                 if (baseline.clarity !== 0) {
-                    imgData = window.CanvasEditor._applyClarityKernel(imgData, baseline.clarity);
+                    processedImgData = window.CanvasEditor._applyClarityKernel(processedImgData, baseline.clarity);
                 }
+
+
+                imgData = processedImgData;
 
                 if (window.CanvasEditor.isScrubbing && (baseWidth > MAX_PREVIEW_DIM || baseHeight > MAX_PREVIEW_DIM)) {
                     ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
@@ -652,7 +682,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     window.imgState.imageXCanvas = offscreen;
 
                     // --- ADD THIS BLOCK TO BIND TO BACKGROUND LAYER ---
-                    const bgLayer = window.LayersEditor ? window.LayersEditor.layers.find(l => l.id === 1) : null;
+                   const bgLayer = window.LayerManager && Array.isArray(window.LayerManager.layers) 
+                    ? window.LayerManager.layers.find(l => l.id === 1 || l.id === 'bg') 
+                    : null;
                     if (bgLayer) {
                         bgLayer.canvas = offscreen;
                         bgLayer.sourceImage = img;
