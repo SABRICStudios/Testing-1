@@ -36,6 +36,7 @@ window.SelectionEditor = {
     brushLastPoint: null,
     _eventsBound: false,
     _uiBound: false,
+    selectionCommitted: false,
 
     init: function () {
         this.createOverlayCanvas();
@@ -221,7 +222,12 @@ window.SelectionEditor = {
 
     setToolActive: function(active) {
         this.isOpen = !!active;
-        window.selectionProcessingActive = !!active;
+        if (active) {
+            this.selectionCommitted = false;
+            window.selectionProcessingActive = true;
+        } else if (!this.selectionCommitted) {
+            window.selectionProcessingActive = false;
+        }
 
         if (!active) {
             this.isDrawing = false;
@@ -380,6 +386,7 @@ window.SelectionEditor = {
         if (!canvas) return;
         this._eventsBound = true;
 
+        canvas.style.touchAction = 'none';
         canvas.addEventListener('pointerdown', e => this.handlePointerDown(e));
         window.addEventListener('pointermove', e => this.handlePointerMove(e));
         window.addEventListener('pointerup', e => this.handlePointerUp(e));
@@ -390,9 +397,9 @@ window.SelectionEditor = {
             this.drawOverlay();
         });
     },
-
-    handlePointerDown: function (e) {
+        handlePointerDown: function (e) {
         if (!this.isOpen || e.button !== 0) return;
+        e.preventDefault();
 
         const p = this.getCanvasCoordinates(e);
         this.currentCoords = p;
@@ -432,6 +439,7 @@ window.SelectionEditor = {
 
     handlePointerMove: function (e) {
         if (!this.isOpen) return;
+        e.preventDefault();
 
         const p = this.getCanvasCoordinates(e);
         this.currentCoords = p;
@@ -451,8 +459,9 @@ window.SelectionEditor = {
         this.drawOverlay();
     },
 
-    handlePointerUp: function () {
+    handlePointerUp: function (e) {
         if (!this.isOpen) return;
+        if (e && e.pointerType) e.preventDefault();
 
         if (this.activeMode === 'brush') {
             if (this.isDrawing) this.finishBrushStroke();
@@ -501,10 +510,9 @@ window.SelectionEditor = {
 
         this.isDrawing = true;
         this.brushLastPoint = {...p};
-        if (!this.previewMask) this.previewMask = this.createEmptyMask(d.width, d.height);
+        this.previewMask = this.createEmptyMask(d.width, d.height);
 
         this.paintBrushAt(p.x, p.y);
-        this.commitPreviewToCurrent();
         this.drawOverlay();
     },
 
@@ -513,14 +521,14 @@ window.SelectionEditor = {
 
         this.paintBrushLine(this.brushLastPoint, p);
         this.brushLastPoint = {...p};
-        this.commitPreviewToCurrent();
         this.drawOverlay();
     },
 
     finishBrushStroke: function () {
         this.isDrawing = false;
         this.brushLastPoint = null;
-        this.commitPreviewMask();
+        if (this.previewMask) this.applyNewCandidate(this.previewMask);
+        this.previewMask = null;
         this.drawOverlay();
     },
 
@@ -749,16 +757,19 @@ window.SelectionEditor = {
 applyNewCandidate: function(candidate) {
     if (!candidate) return;
 
-    if (this.operation === 'new' || !window.activeSelectionMask) {
-        this.currentMask = candidate;
+    const baseMask = this.currentMask || window.activeSelectionMask;
+
+    if (this.operation === 'new' || !baseMask) {
+        this.currentMask = this.cloneMask(candidate);
     } else {
-        this.currentMask = this.combineMasks(window.activeSelectionMask, candidate, this.operation);
+        this.currentMask = this.combineMasks(baseMask, candidate, this.operation);
     }
 
     this.previewMask = null;
+    this.selectionCommitted = false;
     this.applyMaskToGlobal();
 
-    window.selectionProcessingActive = this.isOpen;
+    window.selectionProcessingActive = true;
 
     this.notifyStateChange();
     this.drawOverlay();
@@ -785,201 +796,258 @@ applyNewCandidate: function(candidate) {
                 out.data[i + 3] = value;
             }
         }
+                return out;
+    },
+      applyFeatherToMask:function(mask){
+        if(!mask||!this.feather||this.feather<=0)return mask;
+
+        const radius=Math.max(1,Math.round(this.feather));
+        const out=this.cloneMask(mask);
+        const w=mask.width;
+        const h=mask.height;
+        const src=mask.data;
+        const dst=out.data;
+
+        for(let y=0;y<h;y++){
+            for(let x=0;x<w;x++){
+                const i=(y*w+x)*4;
+                let sum=0;
+                let count=0;
+
+                const minY=Math.max(0,y-radius);
+                const maxY=Math.min(h-1,y+radius);
+                const minX=Math.max(0,x-radius);
+                const maxX=Math.min(w-1,x+radius);
+
+                for(let yy=minY;yy<=maxY;yy++){
+                    for(let xx=minX;xx<=maxX;xx++){
+                        const j=(yy*w+xx)*4;
+                        sum+=src[j+3]||0;
+                        count++;
+                    }
+                }
+
+                const value=count?Math.round(sum/count):0;
+                dst[i]=255;
+                dst[i+1]=255;
+                dst[i+2]=255;
+                dst[i+3]=value;
+            }
+        }
 
         return out;
     },
 
-    commitPreviewToCurrent: function () {
-        if (!this.previewMask) return;
+    applyMaskToGlobal:function(){
+        if(!this.currentMask)return;
 
-        if (!this.currentMask) {
-            this.currentMask = this.cloneMask(this.previewMask);
-        } else {
-            this.currentMask = this.combineMasks(this.currentMask, this.previewMask, this.operation === 'new' ? 'add' : this.operation);
-        }
+        const bounds=this.calculateBounds(this.currentMask);
 
-        this.applyMaskToGlobal();
+        window.activeSelectionMask={
+            width:this.currentMask.width,
+            height:this.currentMask.height,
+            data:new Uint8ClampedArray(this.currentMask.data),
+            bounds:{...bounds}
+        };
+
+        window.selectionDisplayMask=window.activeSelectionMask;
+
+        /*
+         * IMPORTANT:
+         * The mask remains saved after Confirm.
+         * Processing is controlled ONLY by this flag.
+         */
+        window.selectionProcessingActive=!!this.isOpen;
+
+        if(!window.imgState)window.imgState={};
+        if(!window.imgState.selection)window.imgState.selection={};
+
+        window.imgState.selection.active=!!this.isOpen;
+        window.imgState.selection.mode=this.activeMode;
+        window.imgState.selection.bounds={...bounds};
+        window.imgState.selection.path=[...(this.lassoPoints||[])];
     },
 
-    commitPreviewMask: function () {
-        if (this.previewMask) {
-            this.commitPreviewToCurrent();
-            this.previewMask = null;
-            this.notifyStateChange();
-        }
-    },
+    calculateBounds:function(mask){
+        let minX=mask.width;
+        let minY=mask.height;
+        let maxX=-1;
+        let maxY=-1;
 
-applyMaskToGlobal: function () {
-    if (!this.currentMask) return;
-
-    const bounds = this.calculateBounds(this.currentMask);
-
-    const mask = {
-        width: this.currentMask.width,
-        height: this.currentMask.height,
-        data: new Uint8ClampedArray(this.currentMask.data),
-        bounds
-    };
-
-    window.activeSelectionMask = mask;
-    window.selectionDisplayMask = mask;
-    window.selectionProcessingActive = true;
-
-    if (!window.imgState) window.imgState = {};
-    if (!window.imgState.selection) window.imgState.selection = {};
-
-    window.imgState.selection.active = true;
-    window.imgState.selection.mode = this.activeMode;
-    window.imgState.selection.bounds = {...bounds};
-    window.imgState.selection.path = [...(this.lassoPoints || [])];
-},
-
-    calculateBounds: function (mask) {
-        let minX = mask.width;
-        let minY = mask.height;
-        let maxX = -1;
-        let maxY = -1;
-
-        for (let y = 0; y < mask.height; y++) {
-            for (let x = 0; x < mask.width; x++) {
-                if ((mask.data[(y * mask.width + x) * 4 + 3] || 0) > 10) {
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
+        for(let y=0;y<mask.height;y++){
+            for(let x=0;x<mask.width;x++){
+                if((mask.data[(y*mask.width+x)*4+3]||0)>10){
+                    if(x<minX)minX=x;
+                    if(x>maxX)maxX=x;
+                    if(y<minY)minY=y;
+                    if(y>maxY)maxY=y;
                 }
             }
         }
 
-        if (maxX < 0) return {x: 0, y: 0, width: 0, height: 0};
+        if(maxX<0)return{x:0,y:0,width:0,height:0};
 
-        return {
-            x: minX,
-            y: minY,
-            width: maxX - minX + 1,
-            height: maxY - minY + 1
+        return{
+            x:minX,
+            y:minY,
+            width:maxX-minX+1,
+            height:maxY-minY+1
         };
     },
 
-    createMagicWandSelection: function (point) {
-        const target = this.getTargetCanvas();
-        if (!target) return;
+    createMagicWandSelection:function(point){
+        const target=this.getTargetCanvas();
+        if(!target)return;
 
-        const p = this.displayToMask(point);
-        const x = Math.max(0, Math.min(target.width - 1, Math.round(p.x)));
-        const y = Math.max(0, Math.min(target.height - 1, Math.round(p.y)));
-        const ctx = target.getContext('2d');
-        const image = ctx.getImageData(0, 0, target.width, target.height);
-        const idx = (y * target.width + x) * 4;
+        const p=this.displayToMask(point);
+        const x=Math.max(0,Math.min(target.width-1,Math.round(p.x)));
+        const y=Math.max(0,Math.min(target.height-1,Math.round(p.y)));
 
-        const r = image.data[idx];
-        const g = image.data[idx + 1];
-        const b = image.data[idx + 2];
-        const tolerance = this.wandTolerance * 3;
-        const mask = this.createEmptyMask(target.width, target.height);
+        const ctx=target.getContext('2d');
+        if(!ctx)return;
 
-        for (let i = 0; i < image.data.length; i += 4) {
-            const diff = Math.abs(image.data[i] - r) + Math.abs(image.data[i + 1] - g) + Math.abs(image.data[i + 2] - b);
-            if (diff <= tolerance) {
-                mask.data[i] = 255;
-                mask.data[i + 1] = 255;
-                mask.data[i + 2] = 255;
-                mask.data[i + 3] = 255;
+        const image=ctx.getImageData(0,0,target.width,target.height);
+        const idx=(y*target.width+x)*4;
+
+        const r=image.data[idx];
+        const g=image.data[idx+1];
+        const b=image.data[idx+2];
+
+        const tolerance=this.wandTolerance*3;
+        const mask=this.createEmptyMask(target.width,target.height);
+
+        for(let i=0;i<image.data.length;i+=4){
+            const diff=Math.abs(image.data[i]-r)+Math.abs(image.data[i+1]-g)+Math.abs(image.data[i+2]-b);
+
+            if(diff<=tolerance){
+                mask.data[i]=255;
+                mask.data[i+1]=255;
+                mask.data[i+2]=255;
+                mask.data[i+3]=255;
             }
         }
 
         this.applyNewCandidate(mask);
     },
 
-    createColorRangeSelection: function (point) {
-        this.createMagicWandSelection(point);
+    createColorRangeSelection:function(point){
+        const target=this.getTargetCanvas();
+        if(!target)return;
+
+        const p=this.displayToMask(point);
+        const x=Math.max(0,Math.min(target.width-1,Math.round(p.x)));
+        const y=Math.max(0,Math.min(target.height-1,Math.round(p.y)));
+
+        const ctx=target.getContext('2d');
+        if(!ctx)return;
+
+        const image=ctx.getImageData(0,0,target.width,target.height);
+        const idx=(y*target.width+x)*4;
+
+        const r=image.data[idx];
+        const g=image.data[idx+1];
+        const b=image.data[idx+2];
+
+        const tolerance=this.colorTolerance*3;
+        const mask=this.createEmptyMask(target.width,target.height);
+
+        for(let i=0;i<image.data.length;i+=4){
+            const diff=Math.abs(image.data[i]-r)+Math.abs(image.data[i+1]-g)+Math.abs(image.data[i+2]-b);
+
+            if(diff<=tolerance){
+                mask.data[i]=255;
+                mask.data[i+1]=255;
+                mask.data[i+2]=255;
+                mask.data[i+3]=255;
+            }
+        }
+
+        this.applyNewCandidate(mask);
     },
 
-    createSubjectSelection: function () {
-        const target = this.getTargetCanvas();
-        if (!target) return;
+    createSubjectSelection:function(){
+        /*
+         * Subject selection intentionally remains available
+         * in the engine but can stay disabled in the UI until
+         * the AI model is connected.
+         */
+        const target=this.getTargetCanvas();
+        if(!target)return;
 
-        const ctx = target.getContext('2d');
-        const image = ctx.getImageData(0, 0, target.width, target.height);
-        const mask = this.createEmptyMask(target.width, target.height);
+        const ctx=target.getContext('2d');
+        if(!ctx)return;
 
-        let minX = target.width;
-        let minY = target.height;
-        let maxX = -1;
-        let maxY = -1;
+        const image=ctx.getImageData(0,0,target.width,target.height);
+        const mask=this.createEmptyMask(target.width,target.height);
 
-        for (let y = 0; y < target.height; y++) {
-            for (let x = 0; x < target.width; x++) {
-                const i = (y * target.width + x) * 4;
-                const a = image.data[i + 3];
+        for(let y=0;y<target.height;y++){
+            for(let x=0;x<target.width;x++){
+                const i=(y*target.width+x)*4;
+                const a=image.data[i+3];
 
-                if (a > 10) {
-                    mask.data[i] = 255;
-                    mask.data[i + 1] = 255;
-                    mask.data[i + 2] = 255;
-                    mask.data[i + 3] = a;
-                    minX = Math.min(minX, x);
-                    minY = Math.min(minY, y);
-                    maxX = Math.max(maxX, x);
-                    maxY = Math.max(maxY, y);
+                if(a>10){
+                    mask.data[i]=255;
+                    mask.data[i+1]=255;
+                    mask.data[i+2]=255;
+                    mask.data[i+3]=a;
                 }
             }
         }
 
-        if (maxX >= 0) this.applyNewCandidate(mask);
+        this.applyNewCandidate(mask);
     },
 
-    drawSelectionBoundary: function (ctx, mask) {
-        if (!mask || !mask.data || !mask.width || !mask.height) return;
+    drawSelectionBoundary:function(ctx,mask){
+        if(!mask||!mask.data||!mask.width||!mask.height)return;
 
-        const w = mask.width;
-        const h = mask.height;
+        const w=mask.width;
+        const h=mask.height;
 
         ctx.save();
-        ctx.strokeStyle = '#00e5ff';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
+        ctx.strokeStyle='#00e5ff';
+        ctx.lineWidth=2;
+        ctx.setLineDash([6,4]);
+        ctx.lineJoin='round';
+        ctx.lineCap='round';
         ctx.beginPath();
 
-        const selected = (x, y) => {
-            if (x < 0 || y < 0 || x >= w || y >= h) return false;
-            return (mask.data[(y * w + x) * 4 + 3] || 0) > 10;
+        const selected=(x,y)=>{
+            if(x<0||y<0||x>=w||y>=h)return false;
+            return(mask.data[(y*w+x)*4+3]||0)>10;
         };
 
-        for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-                if (!selected(x, y)) continue;
+        for(let y=0;y<h;y++){
+            for(let x=0;x<w;x++){
+                if(!selected(x,y))continue;
 
-                const top = !selected(x, y - 1);
-                const bottom = !selected(x, y + 1);
-                const left = !selected(x - 1, y);
-                const right = !selected(x + 1, y);
+                const top=!selected(x,y-1);
+                const bottom=!selected(x,y+1);
+                const left=!selected(x-1,y);
+                const right=!selected(x+1,y);
 
-                const p00 = this.maskToDisplay({x, y});
-                const p10 = this.maskToDisplay({x: x + 1, y});
-                const p01 = this.maskToDisplay({x, y: y + 1});
-                const p11 = this.maskToDisplay({x: x + 1, y: y + 1});
+                const p00=this.maskToDisplay({x,y});
+                const p10=this.maskToDisplay({x:x+1,y});
+                const p01=this.maskToDisplay({x,y:y+1});
+                const p11=this.maskToDisplay({x:x+1,y:y+1});
 
-                if (top) {
-                    ctx.moveTo(p00.x, p00.y);
-                    ctx.lineTo(p10.x, p10.y);
+                if(top){
+                    ctx.moveTo(p00.x,p00.y);
+                    ctx.lineTo(p10.x,p10.y);
                 }
 
-                if (bottom) {
-                    ctx.moveTo(p01.x, p01.y);
-                    ctx.lineTo(p11.x, p11.y);
+                if(bottom){
+                    ctx.moveTo(p01.x,p01.y);
+                    ctx.lineTo(p11.x,p11.y);
                 }
 
-                if (left) {
-                    ctx.moveTo(p00.x, p00.y);
-                    ctx.lineTo(p01.x, p01.y);
+                if(left){
+                    ctx.moveTo(p00.x,p00.y);
+                    ctx.lineTo(p01.x,p01.y);
                 }
 
-                if (right) {
-                    ctx.moveTo(p10.x, p10.y);
-                    ctx.lineTo(p11.x, p11.y);
+                if(right){
+                    ctx.moveTo(p10.x,p10.y);
+                    ctx.lineTo(p11.x,p11.y);
                 }
             }
         }
@@ -988,184 +1056,310 @@ applyMaskToGlobal: function () {
         ctx.restore();
     },
 
-    drawOverlay: function () {
-        if (!this.overlayCtx || !this.overlayCanvas) return;
+    drawOverlay:function(){
+        if(!this.overlayCtx||!this.overlayCanvas)return;
 
         this.syncOverlaySize();
 
-        const ctx = this.overlayCtx;
-        ctx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+        const ctx=this.overlayCtx;
 
-        if (!this.isOpen) return;
+        ctx.clearRect(
+            0,
+            0,
+            this.overlayCanvas.width,
+            this.overlayCanvas.height
+        );
+
+        /*
+         * The saved mask stays alive after closing,
+         * but the outline is displayed only while the
+         * Selection Tool itself is open.
+         */
+        if(!this.isOpen)return;
 
         ctx.save();
-        ctx.strokeStyle = '#00e5ff';
-        ctx.fillStyle = '#00e5ff';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle='#00e5ff';
+        ctx.fillStyle='#00e5ff';
+        ctx.lineWidth=2;
+        ctx.setLineDash([6,4]);
 
-        if (this.isDrawing) {
-            if (this.activeMode === 'rect') {
-                const r = this.getNormalizedRect(this.startCoords, this.currentCoords);
-                ctx.strokeRect(r.x, r.y, r.width, r.height);
-            } else if (this.activeMode === 'ellipse') {
-                const r = this.getNormalizedRect(this.startCoords, this.currentCoords);
+        if(this.isDrawing){
+
+            if(this.activeMode==='rect'){
+                const r=this.getNormalizedRect(this.startCoords,this.currentCoords);
+                ctx.strokeRect(r.x,r.y,r.width,r.height);
+            }
+
+            else if(this.activeMode==='ellipse'){
+                const r=this.getNormalizedRect(this.startCoords,this.currentCoords);
                 ctx.beginPath();
-                ctx.ellipse(r.x + r.width / 2, r.y + r.height / 2, r.width / 2, r.height / 2, 0, 0, Math.PI * 2);
+                ctx.ellipse(
+                    r.x+r.width/2,
+                    r.y+r.height/2,
+                    r.width/2,
+                    r.height/2,
+                    0,
+                    0,
+                    Math.PI*2
+                );
                 ctx.stroke();
-            } else if (this.activeMode === 'lasso') {
-                if (this.lassoPoints.length) {
-                    ctx.beginPath();
-                    ctx.moveTo(this.lassoPoints[0].x, this.lassoPoints[0].y);
-                    for (let i = 1; i < this.lassoPoints.length; i++) ctx.lineTo(this.lassoPoints[i].x, this.lassoPoints[i].y);
-                    ctx.stroke();
-                }
-            } else if (this.activeMode === 'poly') {
-                if (this.polygonPoints.length) {
-                    ctx.beginPath();
-                    ctx.moveTo(this.polygonPoints[0].x, this.polygonPoints[0].y);
-                    for (let i = 1; i < this.polygonPoints.length; i++) ctx.lineTo(this.polygonPoints[i].x, this.polygonPoints[i].y);
-                    ctx.lineTo(this.currentCoords.x, this.currentCoords.y);
-                    ctx.stroke();
+            }
 
-                    ctx.setLineDash([]);
-                    for (const p of this.polygonPoints) ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
-                }
-            } else if (this.activeMode === 'brush') {
-                if (this.brushLastPoint) {
-                    const p = this.brushLastPoint;
-                    ctx.setLineDash([]);
+            else if(this.activeMode==='lasso'){
+                if(this.lassoPoints.length){
                     ctx.beginPath();
-                    ctx.arc(p.x, p.y, this.brushRadius, 0, Math.PI * 2);
+                    ctx.moveTo(
+                        this.lassoPoints[0].x,
+                        this.lassoPoints[0].y
+                    );
+
+                    for(let i=1;i<this.lassoPoints.length;i++){
+                        ctx.lineTo(
+                            this.lassoPoints[i].x,
+                            this.lassoPoints[i].y
+                        );
+                    }
+
                     ctx.stroke();
                 }
             }
-        } else if (this.currentMask) {
-            this.drawSelectionBoundary(ctx, this.currentMask);
-        } else if (window.activeSelectionMask) {
-            this.drawSelectionBoundary(ctx, window.activeSelectionMask);
+
+            else if(this.activeMode==='poly'){
+                if(this.polygonPoints.length){
+                    ctx.beginPath();
+
+                    ctx.moveTo(
+                        this.polygonPoints[0].x,
+                        this.polygonPoints[0].y
+                    );
+
+                    for(let i=1;i<this.polygonPoints.length;i++){
+                        ctx.lineTo(
+                            this.polygonPoints[i].x,
+                            this.polygonPoints[i].y
+                        );
+                    }
+
+                    ctx.lineTo(
+                        this.currentCoords.x,
+                        this.currentCoords.y
+                    );
+
+                    ctx.stroke();
+
+                    ctx.setLineDash([]);
+
+                    for(const p of this.polygonPoints){
+                        ctx.fillRect(
+                            p.x-3,
+                            p.y-3,
+                            6,
+                            6
+                        );
+                    }
+                }
+            }
+
+            else if(this.activeMode==='brush'){
+                if(this.brushLastPoint){
+                    const p=this.brushLastPoint;
+
+                    ctx.setLineDash([]);
+                    ctx.beginPath();
+
+                    ctx.arc(
+                        p.x,
+                        p.y,
+                        this.brushRadius,
+                        0,
+                        Math.PI*2
+                    );
+
+                    ctx.stroke();
+                }
+            }
+        }
+
+        else if(this.currentMask){
+            this.drawSelectionBoundary(
+                ctx,
+                this.currentMask
+            );
+        }
+
+        else if(window.activeSelectionMask){
+            this.drawSelectionBoundary(
+                ctx,
+                window.activeSelectionMask
+            );
         }
 
         ctx.restore();
     },
 
-    clearOverlay: function () {
-        if (!this.overlayCtx || !this.overlayCanvas) return;
-        this.overlayCtx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+    resetDrawingState:function(){
+        this.isDrawing=false;
+        this.startCoords={x:0,y:0};
+        this.currentCoords={x:0,y:0};
+        this.lassoPoints=[];
+        this.polygonPoints=[];
+        this.brushLastPoint=null;
+        this.brushStrokeMask=null;
     },
 
-    resetDrawingState: function () {
-        this.isDrawing = false;
-        this.startCoords = {x: 0, y: 0};
-        this.currentCoords = {x: 0, y: 0};
-        this.lassoPoints = [];
-        this.polygonPoints = [];
-        this.brushLastPoint = null;
-        this.previewMask = null;
-    },
+    syncToGlobalState:function(){
+        if(!this.currentMask)return;
 
-    syncToGlobalState: function() {
-        if (!this.currentMask) return;
-
+        /*
+         * This updates the saved mask.
+         * Processing is still controlled by isOpen.
+         */
         this.applyMaskToGlobal();
-        window.selectionProcessingActive = this.isOpen;
     },
 
-    notifyStateChange: function () {
-        if (window.SelectionManager && typeof window.SelectionManager.syncFromEngine === 'function') {
+    notifyStateChange:function(){
+        if(window.SelectionManager&&typeof window.SelectionManager.syncFromEngine==='function'){
             window.SelectionManager.syncFromEngine();
         }
 
-        if (window.CanvasEditor && typeof window.CanvasEditor.redraw === 'function') {
+        if(window.CanvasEditor&&typeof window.CanvasEditor.redraw==='function'){
             window.CanvasEditor.redraw();
-        } else if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+        }
+        else if(window.CanvasEditor&&typeof window.CanvasEditor.applyEffectsPipeline==='function'){
             window.CanvasEditor.applyEffectsPipeline();
         }
     },
 
-    confirmSelection: function() {
-        if (this.currentMask) {
-            this.applyMaskToGlobal();
+    confirmSelection:function(){
+        if(this.currentMask){
+            const savedMask=this.cloneMask(this.currentMask);
+            const bounds=this.calculateBounds(savedMask);
+
+            window.activeSelectionMask={
+                width:savedMask.width,
+                height:savedMask.height,
+                data:new Uint8ClampedArray(savedMask.data),
+                bounds:{...bounds}
+            };
+
+            window.selectionDisplayMask=window.activeSelectionMask;
         }
 
-        window.selectionProcessingActive = false;
+        /*
+         * CONFIRM:
+         * Keep the selection mask.
+         * Stop selection processing.
+         */
+        window.selectionProcessingActive=false;
 
-        this.resetDrawingState();
-        this.setToolActive(false);
-        this.clearOverlay();
-        this.notifyStateChange();
-    },
-    discardSelection: function() {
-        window.selectionProcessingActive = false;
-
-        this.currentMask = null;
-        this.previewMask = null;
-        window.activeSelectionMask = null;
-
-        if (window.imgState && window.imgState.selection) {
-            window.imgState.selection.active = false;
-            window.imgState.selection.bounds = null;
-            window.imgState.selection.path = [];
+        if(window.imgState){
+            if(!window.imgState.selection)window.imgState.selection={};
+            window.imgState.selection.active=false;
         }
 
         this.resetDrawingState();
-        this.setToolActive(false);
+        this.isOpen=false;
+
+        this.updateButtonStates();
+        this.updateModeControls();
         this.clearOverlay();
+
         this.notifyStateChange();
     },
 
-    clearSelection: function () {
+    discardSelection:function(){
+        window.selectionProcessingActive=false;
+        window.selectionDisplayMask=null;
+        window.activeSelectionMask=null;
+
+        this.currentMask=null;
+        this.brushStrokeMask=null;
+
+        if(window.imgState&&window.imgState.selection){
+            window.imgState.selection.active=false;
+            window.imgState.selection.bounds=null;
+            window.imgState.selection.path=[];
+        }
+
+        this.resetDrawingState();
+        this.isOpen=false;
+
+        this.updateButtonStates();
+        this.updateModeControls();
+        this.clearOverlay();
+
+        this.notifyStateChange();
+    },
+
+    clearSelection:function(){
         this.discardSelection();
     },
 
-    minimizePanel: function () {
-        const panel = document.getElementById('selectionPanel');
-        const mini = document.getElementById('selectionPanelMini');
+    minimizePanel:function(){
+        const panel=document.getElementById('selectionPanel');
+        const mini=document.getElementById('selectionPanelMini');
 
-        if (panel) panel.style.display = 'none';
+        if(panel)panel.style.display='none';
 
-        if (mini) {
-            mini.style.display = 'flex';
+        if(mini){
+            mini.style.display='flex';
 
-            const margin = 10;
-            const maxLeft = Math.max(margin, window.innerWidth - mini.offsetWidth - margin);
-            const maxTop = Math.max(margin, window.innerHeight - mini.offsetHeight - margin);
+            const margin=10;
 
-            const currentLeft = parseFloat(mini.style.left) || 20;
-            const currentTop = parseFloat(mini.style.top) || 80;
+            const maxLeft=Math.max(
+                margin,
+                window.innerWidth-mini.offsetWidth-margin
+            );
 
-            mini.style.left = `${Math.min(Math.max(margin, currentLeft), maxLeft)}px`;
-            mini.style.top = `${Math.min(Math.max(margin, currentTop), maxTop)}px`;
+            const maxTop=Math.max(
+                margin,
+                window.innerHeight-mini.offsetHeight-margin
+            );
+
+            const currentLeft=parseFloat(mini.style.left)||20;
+            const currentTop=parseFloat(mini.style.top)||80;
+
+            mini.style.left=`${Math.min(Math.max(margin,currentLeft),maxLeft)}px`;
+            mini.style.top=`${Math.min(Math.max(margin,currentTop),maxTop)}px`;
         }
     },
 
-    expandPanel: function () {
-        const panel = document.getElementById('selectionPanel');
-        const mini = document.getElementById('selectionPanelMini');
+    expandPanel:function(){
+        const panel=document.getElementById('selectionPanel');
+        const mini=document.getElementById('selectionPanelMini');
 
-        if (mini) mini.style.display = 'none';
+        if(mini)mini.style.display='none';
 
-        if (panel) {
-            panel.style.display = 'block';
+        if(panel){
+            panel.style.display='block';
 
-            const margin = 10;
-            const width = panel.offsetWidth || 280;
-            const height = panel.offsetHeight || 500;
+            const margin=10;
+            const width=panel.offsetWidth||280;
+            const height=panel.offsetHeight||500;
 
-            const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-            const maxTop = Math.max(margin, window.innerHeight - height - margin);
+            const maxLeft=Math.max(
+                margin,
+                window.innerWidth-width-margin
+            );
 
-            const currentLeft = parseFloat(panel.style.left) || 20;
-            const currentTop = parseFloat(panel.style.top) || 80;
+            const maxTop=Math.max(
+                margin,
+                window.innerHeight-height-margin
+            );
 
-            panel.style.left = `${Math.min(Math.max(margin, currentLeft), maxLeft)}px`;
-            panel.style.top = `${Math.min(Math.max(margin, currentTop), maxTop)}px`;
+            const currentLeft=parseFloat(panel.style.left)||20;
+            const currentTop=parseFloat(panel.style.top)||80;
+
+            panel.style.left=`${Math.min(Math.max(margin,currentLeft),maxLeft)}px`;
+            panel.style.top=`${Math.min(Math.max(margin,currentTop),maxTop)}px`;
         }
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    window.SelectionEditor.init();
+document.addEventListener('DOMContentLoaded',()=>{
+    if(window.SelectionEditor&&typeof window.SelectionEditor.init==='function'){
+        window.SelectionEditor.init();
+    }
 });
 
 })();
