@@ -10,6 +10,12 @@
     <body>
         <div id="canvas" class="canvas">
             <canvas id="editorCanvas"></canvas>
+
+
+            <div id="imageMoveHandle" class="image-move-handle" style="display: none; top: -12px; left: -12px;" title="Drag to move image">
+            <i class="fa fa-arrows"></i>
+            </div>
+
         </div>
 <!-----------------------------------------------------------------------------------------------------------------------
 
@@ -1039,38 +1045,119 @@
 
 
 
+<!-- Full Selection Panel -->
 <div id="selectionPanel" class="adjust-panel" style="display: none; position: absolute; top: 80px; left: 20px; z-index: 100; width: 280px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
     
-    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
-        <h3 style="margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; color: #00adb5;">SELECTION TOOL</h3>
-        <button type="button" id="clearSelectionBtn" style="background: transparent; border: none; color: #ff5e5e; cursor: pointer; font-size: 11px; font-weight: bold;">CLEAR</button>
-    </div>
-
-    <div class="selection-modes" style="display: flex; gap: 8px; margin-bottom: 16px;">
-        <button type="button" class="selection-mode-btn active" data-mode="rect" style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-            <i class="fa fa-square-o" style="font-size: 16px;"></i>
-            <span style="font-size: 10px;">Rectangle</span>
-        </button>
-        <button type="button" class="selection-mode-btn" data-mode="ellipse" style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-            <i class="fa fa-circle-o" style="font-size: 16px;"></i>
-            <span style="font-size: 10px;">Ellipse</span>
-        </button>
-        <button type="button" class="selection-mode-btn" data-mode="lasso" style="flex: 1; padding: 8px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-            <i class="fa fa-pencil" style="font-size: 16px;"></i>
-            <span style="font-size: 10px;">Lasso</span>
+    <!-- Panel Header -->
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #2d2d2d; padding-bottom: 8px;">
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.5px; color: #00adb5;">SELECTION TOOL</h3>
+        <button type="button" id="minimizeSelectionBtn" title="Minimize Panel" style="background: transparent; border: none; color: #888; cursor: pointer; font-size: 13px; padding: 0 2px;">
+            <i class="fa fa-minus"></i>
         </button>
     </div>
 
-    <div class="control-group" style="margin-top: 12px;">
-        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #ccc; margin-bottom: 6px;">
-            <label for="selectionFeather">Feather Selection Edge</label>
+    <!-- Combine Mode (New / Add / Subtract) -->
+    <div class="selection-operations" style="display: flex; background: #121212; border-radius: 6px; padding: 3px; margin-bottom: 14px; gap: 2px; border: 1px solid #2a2a2a;">
+        <button type="button" class="op-btn active" data-op="new" style="flex: 1; background: #2a2a2a; border: none; color: #fff; padding: 6px 0; border-radius: 4px; font-size: 10px; cursor: pointer; font-weight: 500;">New</button>
+        <button type="button" class="op-btn" data-op="add" style="flex: 1; background: transparent; border: none; color: #888; padding: 6px 0; border-radius: 4px; font-size: 10px; cursor: pointer; font-weight: 500;">+ Add</button>
+        <button type="button" class="op-btn" data-op="subtract" style="flex: 1; background: transparent; border: none; color: #888; padding: 6px 0; border-radius: 4px; font-size: 10px; cursor: pointer; font-weight: 500;">- Subtract</button>
+    </div>
+
+    <!-- Selection Modes Grid (4 columns) -->
+    <div class="selection-modes" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 14px;">
+        <!-- Rectangle -->
+        <button type="button" class="selection-mode-btn active" data-mode="rect" title="Rectangle" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #00adb5; color: #fff; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-square-o" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Rect</span>
+        </button>
+        
+        <!-- Ellipse -->
+        <button type="button" class="selection-mode-btn" data-mode="ellipse" title="Ellipse" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-circle-o" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Ellipse</span>
+        </button>
+        
+        <!-- Freehand Lasso -->
+        <button type="button" class="selection-mode-btn" data-mode="lasso" title="Freehand Lasso" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-pencil" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Lasso</span>
+        </button>
+        
+        <!-- Polygonal Lasso -->
+        <button type="button" class="selection-mode-btn" data-mode="polygonal" title="Polygonal Lasso" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-bookmark-o" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Poly</span>
+        </button>
+
+        <!-- Magic Wand -->
+        <button type="button" class="selection-mode-btn" data-mode="wand" title="Magic Wand (Color Select)" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-magic" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Wand</span>
+        </button>
+
+        <!-- Quick Brush -->
+        <button type="button" class="selection-mode-btn" data-mode="brush" title="Selection Brush" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-paint-brush" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Brush</span>
+        </button>
+
+        <!-- AI Subject -->
+         
+        <!--<button type="button" class="selection-mode-btn" data-mode="subject" title="Auto Subject Select" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-user" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Subject</span>
+        </button>-->
+
+        <!-- Color Range -->
+        <button type="button" class="selection-mode-btn" data-mode="eyedropper" title="Sample Color Range" style="padding: 8px 4px; background: #2a2a2a; border: 1px solid #333; color: #aaa; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <i class="fa fa-eyedropper" style="font-size: 15px;"></i>
+            <span style="font-size: 9px;">Color</span>
+        </button>
+    </div>
+
+    <!-- Dynamic Context Controls -->
+    
+    <!-- Magic Wand Tolerance -->
+    <div id="wandControls" class="mode-sub-control" style="display: none; margin-bottom: 12px; background: #222; padding: 8px; border-radius: 6px;">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ccc; margin-bottom: 4px;">
+            <label for="wandTolerance">Color Tolerance</label>
+            <span id="wandToleranceVal">32</span>
+        </div>
+        <input type="range" id="wandTolerance" min="1" max="100" value="32" style="width: 100%; accent-color: #00adb5; background: #333; height: 4px; border-radius: 2px;">
+    </div>
+
+    <!-- Selection Brush Size -->
+    <div id="brushSizeControls" class="mode-sub-control" style="display: none; margin-bottom: 12px; background: #222; padding: 8px; border-radius: 6px;">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ccc; margin-bottom: 4px;">
+            <label for="selectionBrushSize">Brush Radius</label>
+            <span id="selectionBrushSizeVal">20px</span>
+        </div>
+        <input type="range" id="selectionBrushSize" min="5" max="100" value="20" style="width: 100%; accent-color: #00adb5; background: #333; height: 4px; border-radius: 2px;">
+    </div>
+
+    <!-- Edge Feathering -->
+    <div class="control-group" style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ccc; margin-bottom: 6px;">
+            <label for="selectionFeather">Feather Edge</label>
             <span id="selectionFeatherVal">0px</span>
         </div>
         <input type="range" id="selectionFeather" min="0" max="50" value="0" step="1" style="width: 100%; accent-color: #00adb5; background: #333; height: 4px; border-radius: 2px; cursor: pointer;">
     </div>
+
+    <!-- Bottom Action Buttons -->
+    <div class="selection-actions" style="display: flex; gap: 8px; border-top: 1px solid #2d2d2d; padding-top: 12px;">
+        <button type="button" id="discardSelectionBtn" style="flex: 1; background: #2a2a2a; border: 1px solid #333; color: #ff5e5e; padding: 7px 0; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;">Discard</button>
+        <button type="button" id="confirmSelectionBtn" style="flex: 1; background: #00adb5; border: none; color: #fff; padding: 7px 0; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;">Confirm</button>
+    </div>
 </div>
 
-
+<!-- Minimized Panel Bar -->
+<div id="selectionPanelMini" style="display: none; position: absolute; top: 80px; left: 20px; z-index: 100; background: #1a1a1a; border: 1px solid #00adb5; border-radius: 8px; padding: 8px 12px; color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.5); cursor: pointer; align-items: center; gap: 8px;">
+    <span style="font-size: 11px; font-weight: 600; color: #00adb5; letter-spacing: 0.5px;">SELECTION TOOL</span>
+    <button type="button" id="expandSelectionBtn" title="Expand Panel" style="background: transparent; border: none; color: #888; cursor: pointer; font-size: 11px; padding: 0;">
+        <i class="fa fa-expand"></i>
+    </button>
+</div>
 
 
 

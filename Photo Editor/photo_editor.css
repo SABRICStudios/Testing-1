@@ -334,3 +334,38 @@ body{
 .crop-btn:active {
     transform: scale(0.98);
 }
+
+
+
+/* Move Handle Base & Active States */
+.image-move-handle {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background-color: #00adb5;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    cursor: move;
+    z-index: 1500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.image-move-handle i {
+    color: #ffffff;
+    font-size: 11px;
+    pointer-events: none;
+}
+
+.image-move-handle:hover {
+    background-color: #02c2cc;
+    transform: scale(1.15);
+}
+
+.image-move-handle:active {
+    cursor: grabbing;
+    background-color: #008288;
+}
