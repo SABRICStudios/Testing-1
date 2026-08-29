@@ -264,7 +264,7 @@ applyEffectsPipeline: () => {
 
                     let maskAlpha = 1.0; // Default to full effect strength across the entire canvas
 
-if (isSelectionActive && maskData) {
+                    if (isSelectionActive && maskData) {
                         const pixelIdx = i / 4;
                         const px = pixelIdx % currentW;
                         const py = Math.floor(pixelIdx / currentW);
@@ -273,11 +273,13 @@ if (isSelectionActive && maskData) {
                         const maskY = Math.floor((py / currentH) * maskHeight);
 
                         // Fast bounding check: Skip pixel modifications if outside selection box
+                        // Fast bounding check: Skip pixel modifications if outside selection box
                         if (bounds && (maskX < bounds.x || maskX >= bounds.x + bounds.width || maskY < bounds.y || maskY >= bounds.y + bounds.height)) {
                             maskAlpha = 0;
                         } else {
                             const maskIdx = (maskY * maskWidth + maskX) * 4;
-                            maskAlpha = (maskData[maskIdx + 3] || maskData[maskIdx]) / 255;
+                            // Explicitly read alpha channel (index + 3) to accurately evaluate multi-region masks
+                            maskAlpha = (maskData[maskIdx + 3] !== undefined ? maskData[maskIdx + 3] : 0) / 255;
                         }
 
                         // If pixel is outside the active selection mask, leave original data intact and skip pipeline
