@@ -1,4 +1,4 @@
-// history_manager_3.js - Central Orchestrator & App Timeline Manager
+// history_manager_2.js - Central Orchestrator & App Timeline Manager
 
 class MasterHistoryManager {
     constructor(maxHistory = 20) {
@@ -6,14 +6,21 @@ class MasterHistoryManager {
         this.historyStack = [];
         this.currentIndex = -1;
 
-        // Factory defaults mapping all parameters plus structural transform parameters
+        // Factory defaults mapping all parameters plus structural transform and selection parameters
         this.defaultState = {
             scalar: { exposure: 0.0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
             baseline: { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 },
-            // FIXED: Initialize to null so the photo editor pipeline knows to use the actual image file sizes
+            selection: {
+                global: {
+                    scalar: { exposure: 0.0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+                    baseline: { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 }
+                },
+                local: {
+                    scalar: { exposure: 0.0, brightness: 0, contrast: 0, saturation: 0, temperature: 0, tint: 0 },
+                    baseline: { highlights: 0, shadows: 0, clarity: 0, sharpen: 0, vibrance: 0, vignette: 0 }
+                }
+            },
             transform: { width: null, height: null, rotation: 0 },
-            
-            // Default structural tracking configuration for the filter engine tool
             filter: {
                 type: 'none',
                 intensity: 100
@@ -54,27 +61,61 @@ class MasterHistoryManager {
     }
 
     /**
-     * Updates an active property level dynamically without creating redundant historical log milestones
+     * Updates an active property level dynamically while correctly routing local vs global selection contexts
      */
     updateValue(toolKey, value) {
         if (this.currentIndex < 0) return;
-        
-        // Safety copy to prevent direct uncommitted history stack mutations
-        const currentState = this.historyStack[this.currentIndex].state;
 
-        // Route complex baseline properties safely
-        if (['highlights', 'shadows', 'clarity', 'sharpen', 'vibrance', 'vignette'].includes(toolKey)) {
-            if (!currentState.baseline) currentState.baseline = {};
-            currentState.baseline[toolKey] = parseInt(value, 10);
-            this.broadcastChange();
-        } 
-        // Route exposure / scalars cleanly
-        else {
-            const parsedValue = toolKey === 'exposure' ? parseFloat(value) : parseInt(value, 10);
-            if (!currentState.scalar) currentState.scalar = {};
-            currentState.scalar[toolKey] = parsedValue;
-            this.broadcastChange();
+        const currentState = this.historyStack[this.currentIndex].state;
+        const isSelectionActive = !!(window.activeSelectionMask && window.activeSelectionMask.data);
+        const parsedValue = toolKey === 'exposure' ? parseFloat(value) : parseInt(value, 10);
+
+        // Update active SelectionAdjustmentState runtime memory mirror if initialized
+        if (window.SelectionAdjustmentState) {
+            const activeGroup = isSelectionActive ? window.SelectionAdjustmentState.local : window.SelectionAdjustmentState.global;
+            if (['highlights', 'shadows', 'clarity', 'sharpen', 'vibrance', 'vignette'].includes(toolKey)) {
+                if (!activeGroup.baseline) activeGroup.baseline = {};
+                activeGroup.baseline[toolKey] = parsedValue;
+            } else {
+                if (!activeGroup.scalar) activeGroup.scalar = {};
+                activeGroup.scalar[toolKey] = parsedValue;
+            }
         }
+
+        // Route updates into current timeline history snapshot
+        if (isSelectionActive) {
+            if (!currentState.selection) {
+                currentState.selection = JSON.parse(JSON.stringify(this.defaultState.selection));
+            }
+            const activeGroup = currentState.selection.local;
+            if (['highlights', 'shadows', 'clarity', 'sharpen', 'vibrance', 'vignette'].includes(toolKey)) {
+                if (!activeGroup.baseline) activeGroup.baseline = {};
+                activeGroup.baseline[toolKey] = parsedValue;
+            } else {
+                if (!activeGroup.scalar) activeGroup.scalar = {};
+                activeGroup.scalar[toolKey] = parsedValue;
+            }
+        } else {
+            if (['highlights', 'shadows', 'clarity', 'sharpen', 'vibrance', 'vignette'].includes(toolKey)) {
+                if (!currentState.baseline) currentState.baseline = {};
+                currentState.baseline[toolKey] = parsedValue;
+            } else {
+                if (!currentState.scalar) currentState.scalar = {};
+                currentState.scalar[toolKey] = parsedValue;
+            }
+
+            // Keep global selection state in sync with base parameters
+            if (!currentState.selection) {
+                currentState.selection = JSON.parse(JSON.stringify(this.defaultState.selection));
+            }
+            if (['highlights', 'shadows', 'clarity', 'sharpen', 'vibrance', 'vignette'].includes(toolKey)) {
+                currentState.selection.global.baseline[toolKey] = parsedValue;
+            } else {
+                currentState.selection.global.scalar[toolKey] = parsedValue;
+            }
+        }
+
+        this.broadcastChange();
     }
 
     /**
@@ -91,19 +132,28 @@ class MasterHistoryManager {
 
         if (payload.type === 'scalar') {
             baseState.scalar = { ...baseState.scalar, ...payload.values };
+            if (baseState.selection && baseState.selection.global) {
+                baseState.selection.global.scalar = { ...baseState.selection.global.scalar, ...payload.values };
+            }
         } else if (payload.type === 'baseline') {
-            // FIXED: Support both payload models (.activeToolValues from parameter manager and standard baseline .values)
             if (payload.activeToolValues) {
                 baseState.scalar = { ...baseState.scalar, ...payload.activeToolValues };
+                if (baseState.selection && baseState.selection.global) {
+                    baseState.selection.global.scalar = { ...baseState.selection.global.scalar, ...payload.activeToolValues };
+                }
             } else {
                 baseState.baseline = { ...baseState.baseline, ...payload.values };
+                if (baseState.selection && baseState.selection.global) {
+                    baseState.selection.global.baseline = { ...baseState.selection.global.baseline, ...payload.values };
+                }
             }
+        } else if (payload.type === 'selection') {
+            baseState.selection = JSON.parse(JSON.stringify(payload.values));
         } else if (payload.type === 'transform') {
             baseState.transform = { ...baseState.transform, ...payload.values };
         } else if (payload.type === 'filter') {
             baseState.filter = { ...baseState.filter, ...payload.values };
-        }
-         else if (payload.type === 'details') { // FIX: Handle details payload commit
+        } else if (payload.type === 'details') {
             baseState.details = { ...baseState.details, ...payload.values };
         }
 
@@ -142,20 +192,27 @@ class MasterHistoryManager {
     _sessionBackup = null;
 
     backupActiveSessionState() {
-        this._sessionBackup = JSON.parse(JSON.stringify(this.historyStack[this.currentIndex].state));
+        this._sessionBackup = {
+            state: JSON.parse(JSON.stringify(this.historyStack[this.currentIndex].state)),
+            selectionState: window.SelectionAdjustmentState ? JSON.parse(JSON.stringify(window.SelectionAdjustmentState)) : null
+        };
     }
 
     revertActiveSessionState() {
         if (this._sessionBackup) {
-            this.historyStack[this.currentIndex].state = this._sessionBackup;
-            
-            // Revert sub-manager cache tracking vectors safely
+            this.historyStack[this.currentIndex].state = JSON.parse(JSON.stringify(this._sessionBackup.state));
+
+            if (this._sessionBackup.selectionState && window.SelectionAdjustmentState) {
+                window.SelectionAdjustmentState = JSON.parse(JSON.stringify(this._sessionBackup.selectionState));
+            }
+
             if (window.BaselineHistory) {
-                window.BaselineHistory.liveValues = { ...this._sessionBackup.baseline };
-                window.BaselineHistory.currentState = { ...this._sessionBackup.baseline };
+                window.BaselineHistory.liveValues = { ...this._sessionBackup.state.baseline };
+                window.BaselineHistory.currentState = { ...this._sessionBackup.state.baseline };
             }
 
             this._sessionBackup = null;
+            this.syncSubManagersToCurrentCheckpoint();
             this.broadcastChange();
         }
     }
@@ -168,7 +225,7 @@ class MasterHistoryManager {
 
     syncSubManagersToCurrentCheckpoint() {
         const currentSnapshot = this.getCurrentParameters();
-        
+
         // Sync Adjust / Scalar values down to its sub-manager on undo/redo
         if (window.ParameterHistory && typeof window.ParameterHistory.syncState === 'function') {
             window.ParameterHistory.syncState(currentSnapshot.scalar);
@@ -177,20 +234,27 @@ class MasterHistoryManager {
         if (window.BaselineHistory && typeof window.BaselineHistory.syncState === 'function') {
             window.BaselineHistory.syncState(currentSnapshot.baseline);
         }
-        
-        // Inside history_manager.js -> syncSubManagersToCurrentCheckpoint()
+
         if (window.BaselineFilterHistory && typeof window.BaselineFilterHistory.syncState === 'function') {
             window.BaselineFilterHistory.syncState(currentSnapshot.filter);
         }
 
-        // FIX: Sync historic details state back to active manager UI on undo/redo
+        // Sync Selection State on undo/redo or history snapshot shifts
+        if (currentSnapshot.selection) {
+            window.SelectionAdjustmentState = JSON.parse(JSON.stringify(currentSnapshot.selection));
+            if (typeof window.syncAdjustToolUI === 'function') {
+                const isSelectionActive = !!(window.activeSelectionMask && window.activeSelectionMask.data);
+                window.syncAdjustToolUI(isSelectionActive);
+            }
+        }
+
         if (currentSnapshot.details && window.DetailsManager) {
             window.DetailsManager.activeState = { ...currentSnapshot.details };
             if (typeof window.DetailsManager.syncUIFromState === 'function') {
                 window.DetailsManager.syncUIFromState();
             }
         }
-        // NEW FIX: If a historic step contains true tracking resolutions, sync back to active state variables
+
         if (currentSnapshot.transform && currentSnapshot.transform.width) {
             if (window.imgState) {
                 window.imgState.width = currentSnapshot.transform.width;
