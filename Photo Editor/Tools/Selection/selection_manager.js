@@ -11,6 +11,16 @@ window.SelectionEditor = {
     featherRadius: 0,
     wandTolerance: 32,
     brushRadius: 20,
+    
+    // local adjustment parameters for active mask
+    adjustments: {
+        exposure: 0,
+        contrast: 0,
+        saturation: 0,
+        curves: null,
+        colorGrading: null
+    },
+
     isDrawing: false,
     startCoords: { x: 0, y: 0 },
     currentCoords: { x: 0, y: 0 },
@@ -23,20 +33,23 @@ if (typeof window.selectionProcessingActive !== 'boolean') {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // UI Elements
     const selectionBtn = document.getElementById('selectionToolBtn');
     const selectionPanel = document.getElementById('selectionPanel');
     const selectionPanelMini = document.getElementById('selectionPanelMini');
-
+    
     const modeButtons = document.querySelectorAll('.selection-mode-btn');
     const opButtons = document.querySelectorAll('.op-btn');
     const featherInput = document.getElementById('selectionFeather');
     const featherVal = document.getElementById('selectionFeatherVal');
-
+    
+    // Header & Footer Action Buttons
     const minimizeBtn = document.getElementById('minimizeSelectionBtn');
     const expandBtn = document.getElementById('expandSelectionBtn');
     const confirmBtn = document.getElementById('confirmSelectionBtn');
     const discardBtn = document.getElementById('discardSelectionBtn');
 
+    // Context Controls
     const wandControls = document.getElementById('wandControls');
     const wandToleranceInput = document.getElementById('wandTolerance');
     const wandToleranceVal = document.getElementById('wandToleranceVal');
@@ -46,17 +59,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const brushSizeVal = document.getElementById('selectionBrushSizeVal');
 
     const mainCanvas = document.getElementById('editorCanvas');
-
     if (!selectionPanel || !mainCanvas) return;
 
+    // --- Unified Panel Dragging Engine ---
     function enablePanelDragging(targetPanel) {
         let isDragging = false;
-        let startX = 0;
-        let startY = 0;
-        let initialLeft = 0;
-        let initialTop = 0;
+        let startX = 0, startY = 0;
+        let initialLeft = 0, initialTop = 0;
 
         function handleDragStart(clientX, clientY, eventTarget) {
+            // Ignore drag action if user clicks an interactive input or button directly
             if (eventTarget.closest('button, input, select, textarea, label, .op-btn, .selection-mode-btn')) {
                 return false;
             }
@@ -79,21 +91,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const dx = clientX - startX;
             const dy = clientY - startY;
 
-            let newLeft = initialLeft + dx;
-            let newTop = initialTop + dy;
+            const newLeft = initialLeft + dx;
+            const newTop = initialTop + dy;
 
-            const panelWidth = targetPanel.offsetWidth;
-            const panelHeight = targetPanel.offsetHeight;
-
-            const maxLeft = Math.max(0, window.innerWidth - panelWidth);
-            const maxTop = Math.max(0, window.innerHeight - panelHeight);
-
-            newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-            newTop = Math.max(0, Math.min(newTop, maxTop));
-
+            // Update active panel position
             targetPanel.style.left = `${newLeft}px`;
             targetPanel.style.top = `${newTop}px`;
 
+            // Keep spatial position perfectly synced across expanded/minimized states
             if (targetPanel === selectionPanel && selectionPanelMini) {
                 selectionPanelMini.style.left = `${newLeft}px`;
                 selectionPanelMini.style.top = `${newTop}px`;
@@ -104,30 +109,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function handleDragEnd() {
-            if (!isDragging) return;
-            isDragging = false;
-            targetPanel.style.cursor = 'grab';
+            if (isDragging) {
+                isDragging = false;
+                targetPanel.style.cursor = 'grab';
+            }
         }
 
         targetPanel.style.cursor = 'grab';
 
-        targetPanel.addEventListener('mousedown', e => {
-            handleDragStart(e.clientX, e.clientY, e.target);
-        });
-
-        window.addEventListener('mousemove', e => {
-            handleDragMove(e.clientX, e.clientY);
-        });
-
+        // Mouse Listeners
+        targetPanel.addEventListener('mousedown', (e) => handleDragStart(e.clientX, e.clientY, e.target));
+        window.addEventListener('mousemove', (e) => handleDragMove(e.clientX, e.clientY));
         window.addEventListener('mouseup', handleDragEnd);
 
-        targetPanel.addEventListener('touchstart', e => {
+        // Touch Listeners
+        targetPanel.addEventListener('touchstart', (e) => {
             if (e.touches.length > 0) {
                 handleDragStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
             }
         }, { passive: true });
 
-        window.addEventListener('touchmove', e => {
+        window.addEventListener('touchmove', (e) => {
             if (e.touches.length > 0) {
                 handleDragMove(e.touches[0].clientX, e.touches[0].clientY);
             }
@@ -136,154 +138,115 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('touchend', handleDragEnd);
     }
 
+    // Attach drag listener to both main panel and mini UI
     enablePanelDragging(selectionPanel);
-
     if (selectionPanelMini) {
         enablePanelDragging(selectionPanelMini);
     }
 
-    function openSelectionUI() {
-        SelectionEditor.isOpen = true;
-        window.selectionProcessingActive = true;
-
-        selectionPanel.style.display = 'block';
-
-        if (selectionPanelMini) {
-            selectionPanelMini.style.display = 'none';
-        }
-
-        if (typeof initSelectionEngine === 'function') {
-            initSelectionEngine();
-        }
-
-        if (typeof requestSelectionOverlayRender === 'function') {
-            requestSelectionOverlayRender();
-        }
-    }
-
-    function closeSelectionUI() {
-        SelectionEditor.isOpen = false;
-        window.selectionProcessingActive = false;
-
-        SelectionEditor.isDrawing = false;
-        SelectionEditor.lassoPoints = [];
-        SelectionEditor.polyPoints = [];
-
-        selectionPanel.style.display = 'none';
-
-        if (selectionPanelMini) {
-            selectionPanelMini.style.display = 'none';
-        }
-
-        if (typeof requestSelectionOverlayRender === 'function') {
-            requestSelectionOverlayRender();
-        }
-    }
-
+// --- Toggle & Panel Display Logic ---
     if (selectionBtn) {
         selectionBtn.addEventListener('click', () => {
+            SelectionEditor.isOpen = !SelectionEditor.isOpen;
+            
             if (SelectionEditor.isOpen) {
-                closeSelectionUI();
+                window.selectionProcessingActive = true;
+                selectionPanel.style.display = 'block';
+                if (selectionPanelMini) selectionPanelMini.style.display = 'none';
+                
+                // Sync main UI sliders to show local selection adjustment values
+                if (window.CanvasEditor && typeof window.CanvasEditor.loadSelectionSliderUI === 'function') {
+                    window.CanvasEditor.loadSelectionSliderUI(SelectionEditor.adjustments);
+                }
+
+                if (typeof initSelectionEngine === 'function') initSelectionEngine();
             } else {
-                openSelectionUI();
+                selectionPanel.style.display = 'none';
+                if (selectionPanelMini) selectionPanelMini.style.display = 'none';
+                
+                // Restore main UI sliders back to global settings
+                if (window.CanvasEditor && typeof window.CanvasEditor.restoreGlobalSliderUI === 'function') {
+                    window.CanvasEditor.restoreGlobalSliderUI();
+                }
+
+                if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+                    window.CanvasEditor.applyEffectsPipeline();
+                }
             }
         });
     }
 
+    // Minimize Handler
     if (minimizeBtn && selectionPanelMini) {
-        minimizeBtn.addEventListener('click', e => {
-            e.stopPropagation();
-
+        minimizeBtn.addEventListener('click', () => {
             selectionPanelMini.style.top = selectionPanel.style.top;
             selectionPanelMini.style.left = selectionPanel.style.left;
-
             selectionPanel.style.display = 'none';
             selectionPanelMini.style.display = 'flex';
         });
     }
 
-    const expandPanel = e => {
-        if (e) e.stopPropagation();
-
-        if (selectionPanelMini) {
-            selectionPanelMini.style.display = 'none';
-        }
-
+    // Expand Handler
+    const expandPanel = () => {
+        if (selectionPanelMini) selectionPanelMini.style.display = 'none';
         if (selectionPanel) {
-            selectionPanel.style.top = selectionPanelMini ? selectionPanelMini.style.top : '80px';
-            selectionPanel.style.left = selectionPanelMini ? selectionPanelMini.style.left : '20px';
+            selectionPanel.style.top = selectionPanelMini.style.top;
+            selectionPanel.style.left = selectionPanelMini.style.left;
             selectionPanel.style.display = 'block';
-        }
-
-        SelectionEditor.isOpen = true;
-        window.selectionProcessingActive = true;
-
-        if (typeof requestSelectionOverlayRender === 'function') {
-            requestSelectionOverlayRender();
         }
     };
 
-    if (expandBtn) {
-        expandBtn.addEventListener('click', expandPanel);
-    }
+    if (expandBtn) expandBtn.addEventListener('click', expandPanel);
 
-    if (selectionPanelMini) {
-        selectionPanelMini.addEventListener('click', e => {
-            if (e.target.closest('#expandSelectionBtn')) return;
-            expandPanel(e);
-        });
-    }
-
+// Confirm Action: Lock selection mask and close UI
     if (confirmBtn) {
         confirmBtn.addEventListener('click', () => {
-            window.selectionProcessingActive = false;
             SelectionEditor.isOpen = false;
-            SelectionEditor.isDrawing = false;
-
+            window.selectionProcessingActive = false;
             selectionPanel.style.display = 'none';
-
-            if (selectionPanelMini) {
-                selectionPanelMini.style.display = 'none';
-            }
-
-            if (typeof requestSelectionOverlayRender === 'function') {
-                requestSelectionOverlayRender();
-            }
-
-            if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
-                window.CanvasEditor.applyEffectsPipeline();
+            if (selectionPanelMini) selectionPanelMini.style.display = 'none';
+            
+            if (window.CanvasEditor) {
+                // Save active local mask adjustments to render pipeline
+                if (typeof window.CanvasEditor.saveLocalMaskAdjustments === 'function') {
+                    window.CanvasEditor.saveLocalMaskAdjustments(SelectionEditor.adjustments);
+                }
+                // Switch sliders back to global mode controls
+                if (typeof window.CanvasEditor.restoreGlobalSliderUI === 'function') {
+                    window.CanvasEditor.restoreGlobalSliderUI();
+                }
+                if (typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+                    window.CanvasEditor.applyEffectsPipeline();
+                }
             }
         });
     }
 
+// Discard Action: Clear mask and close UI
     if (discardBtn) {
         discardBtn.addEventListener('click', () => {
-            window.selectionProcessingActive = false;
             SelectionEditor.isOpen = false;
-            SelectionEditor.isDrawing = false;
-
+            window.selectionProcessingActive = false;
             selectionPanel.style.display = 'none';
+            if (selectionPanelMini) selectionPanelMini.style.display = 'none';
 
-            if (selectionPanelMini) {
-                selectionPanelMini.style.display = 'none';
-            }
-
-            if (typeof clearActiveSelection === 'function') {
-                clearActiveSelection();
-            }
-
-            if (typeof requestSelectionOverlayRender === 'function') {
-                requestSelectionOverlayRender();
-            }
-
-            if (window.CanvasEditor && typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
-                window.CanvasEditor.applyEffectsPipeline();
+            if (typeof clearActiveSelection === 'function') clearActiveSelection();
+            
+            if (window.CanvasEditor) {
+                // Restore slider UI back to global settings
+                if (typeof window.CanvasEditor.restoreGlobalSliderUI === 'function') {
+                    window.CanvasEditor.restoreGlobalSliderUI();
+                }
+                if (typeof window.CanvasEditor.applyEffectsPipeline === 'function') {
+                    window.CanvasEditor.applyEffectsPipeline();
+                }
             }
         });
     }
 
+    // Mode Switcher Buttons
     modeButtons.forEach(btn => {
-        btn.addEventListener('click', e => {
+        btn.addEventListener('click', (e) => {
             modeButtons.forEach(b => {
                 b.classList.remove('active');
                 b.style.borderColor = '#333';
@@ -291,27 +254,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const target = e.currentTarget;
-
             target.classList.add('active');
             target.style.borderColor = '#00adb5';
             target.style.color = '#fff';
 
             SelectionEditor.activeMode = target.getAttribute('data-mode') || 'rect';
-            window.selectionProcessingActive = true;
 
+            // Context Controls Visibility
             if (wandControls) {
-                wandControls.style.display =
-                    SelectionEditor.activeMode === 'wand' ||
-                    SelectionEditor.activeMode === 'eyedropper'
-                        ? 'block'
-                        : 'none';
+                wandControls.style.display = (SelectionEditor.activeMode === 'wand' || SelectionEditor.activeMode === 'eyedropper') ? 'block' : 'none';
             }
-
             if (brushControls) {
-                brushControls.style.display =
-                    SelectionEditor.activeMode === 'brush'
-                        ? 'block'
-                        : 'none';
+                brushControls.style.display = (SelectionEditor.activeMode === 'brush') ? 'block' : 'none';
             }
 
             if (SelectionEditor.activeMode === 'subject') {
@@ -319,23 +273,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     processAutoSubjectSelection();
                 }
             }
-
-            if (typeof requestSelectionOverlayRender === 'function') {
-                requestSelectionOverlayRender();
-            }
         });
     });
 
+    // Combine Operation Switcher (New / Add / Subtract)
     opButtons.forEach(btn => {
-        btn.addEventListener('click', e => {
+        btn.addEventListener('click', (e) => {
             opButtons.forEach(b => {
                 b.classList.remove('active');
                 b.style.background = 'transparent';
                 b.style.color = '#888';
             });
-
             const target = e.currentTarget;
-
             target.classList.add('active');
             target.style.background = '#2a2a2a';
             target.style.color = '#fff';
@@ -344,50 +293,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Parameter Sliders
     if (featherInput && featherVal) {
-        featherInput.addEventListener('input', e => {
-            const val = parseInt(e.target.value, 10) || 0;
-
-            featherVal.textContent = `${val}px`;
+        featherInput.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            featherVal.textContent = val + 'px';
             SelectionEditor.featherRadius = val;
-
-            if (typeof requestSelectionOverlayRender === 'function') {
-                requestSelectionOverlayRender();
-            }
+            if (typeof requestSelectionOverlayRender === 'function') requestSelectionOverlayRender();
         });
     }
 
     if (wandToleranceInput && wandToleranceVal) {
-        wandToleranceInput.addEventListener('input', e => {
-            const val = parseInt(e.target.value, 10) || 32;
-
+        wandToleranceInput.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
             wandToleranceVal.textContent = val;
             SelectionEditor.wandTolerance = val;
         });
     }
 
     if (brushSizeInput && brushSizeVal) {
-        brushSizeInput.addEventListener('input', e => {
-            const val = parseInt(e.target.value, 10) || 20;
-
-            brushSizeVal.textContent = `${val}px`;
+        brushSizeInput.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            brushSizeVal.textContent = val + 'px';
             SelectionEditor.brushRadius = val;
         });
     }
 
+    // Helper: Normalize Canvas Coordinates
     function getCanvasCoords(e) {
         const rect = mainCanvas.getBoundingClientRect();
-
-        const clientX =
-            e.touches && e.touches.length > 0
-                ? e.touches[0].clientX
-                : e.clientX;
-
-        const clientY =
-            e.touches && e.touches.length > 0
-                ? e.touches[0].clientY
-                : e.clientY;
-
+        const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
         const scaleX = mainCanvas.width / rect.width;
         const scaleY = mainCanvas.height / rect.height;
 
@@ -397,119 +333,73 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Pointer Event Handlers
     function handlePointerDown(e) {
-        if (!SelectionEditor.isOpen) return;
-
+        if (!SelectionEditor.isOpen && !window.selectionProcessingActive) return;
         const coords = getCanvasCoords(e);
 
         SelectionEditor.isDrawing = true;
         SelectionEditor.startCoords = coords;
         SelectionEditor.currentCoords = coords;
 
-        if (
-            SelectionEditor.activeMode === 'lasso' ||
-            SelectionEditor.activeMode === 'brush'
-        ) {
+        if (SelectionEditor.activeMode === 'lasso' || SelectionEditor.activeMode === 'brush') {
             SelectionEditor.lassoPoints = [coords];
         } else if (SelectionEditor.activeMode === 'polygonal') {
             SelectionEditor.polyPoints.push(coords);
-        } else if (
-            SelectionEditor.activeMode === 'wand' ||
-            SelectionEditor.activeMode === 'eyedropper'
-        ) {
+        } else if (SelectionEditor.activeMode === 'wand' || SelectionEditor.activeMode === 'eyedropper') {
             if (typeof processColorSelection === 'function') {
                 processColorSelection(
-                    coords.x,
-                    coords.y,
-                    SelectionEditor.wandTolerance,
+                    coords.x, 
+                    coords.y, 
+                    SelectionEditor.wandTolerance, 
                     SelectionEditor.activeMode === 'eyedropper'
                 );
             }
-
             SelectionEditor.startCoords = coords;
-            SelectionEditor.currentCoords = {
-                x: coords.x + 1,
-                y: coords.y + 1
-            };
-
+            SelectionEditor.currentCoords = { x: coords.x + 1, y: coords.y + 1 };
             SelectionEditor.isDrawing = false;
-
-            if (typeof requestSelectionOverlayRender === 'function') {
-                requestSelectionOverlayRender();
-            }
-
             return;
         }
 
-        if (typeof requestSelectionOverlayRender === 'function') {
-            requestSelectionOverlayRender();
-        }
+        if (typeof requestSelectionOverlayRender === 'function') requestSelectionOverlayRender();
     }
 
     function handlePointerMove(e) {
-        if (!SelectionEditor.isOpen || !SelectionEditor.isDrawing) return;
-
+        if ((!SelectionEditor.isOpen && !window.selectionProcessingActive) || !SelectionEditor.isDrawing) return;
         const coords = getCanvasCoords(e);
-
         SelectionEditor.currentCoords = coords;
 
-        if (
-            SelectionEditor.activeMode === 'lasso' ||
-            SelectionEditor.activeMode === 'brush'
-        ) {
+        if (SelectionEditor.activeMode === 'lasso' || SelectionEditor.activeMode === 'brush') {
             SelectionEditor.lassoPoints.push(coords);
         }
 
-        if (typeof requestSelectionOverlayRender === 'function') {
-            requestSelectionOverlayRender();
-        }
+        if (typeof requestSelectionOverlayRender === 'function') requestSelectionOverlayRender();
     }
 
     function handlePointerUp() {
-        if (!SelectionEditor.isOpen || !SelectionEditor.isDrawing) return;
-
+        if ((!SelectionEditor.isOpen && !window.selectionProcessingActive) || !SelectionEditor.isDrawing) return;
         SelectionEditor.isDrawing = false;
 
-        if (
-            SelectionEditor.activeMode === 'lasso' &&
-            SelectionEditor.lassoPoints.length > 2
-        ) {
-            SelectionEditor.lassoPoints.push({
-                ...SelectionEditor.lassoPoints[0]
-            });
+        if (SelectionEditor.activeMode === 'lasso' && SelectionEditor.lassoPoints.length > 2) {
+            SelectionEditor.lassoPoints.push({ ...SelectionEditor.lassoPoints[0] });
         }
 
-        if (typeof finalizeSelectionArea === 'function') {
-            finalizeSelectionArea();
-        }
+        if (typeof finalizeSelectionArea === 'function') finalizeSelectionArea();
     }
 
+    // Canvas Input Listeners
     mainCanvas.addEventListener('mousedown', handlePointerDown);
     mainCanvas.addEventListener('mousemove', handlePointerMove);
     window.addEventListener('mouseup', handlePointerUp);
 
-    mainCanvas.addEventListener('touchstart', handlePointerDown, {
-        passive: true
-    });
-
-    mainCanvas.addEventListener('touchmove', handlePointerMove, {
-        passive: true
-    });
-
+    mainCanvas.addEventListener('touchstart', handlePointerDown, { passive: true });
+    mainCanvas.addEventListener('touchmove', handlePointerMove, { passive: true });
     window.addEventListener('touchend', handlePointerUp);
 
     mainCanvas.addEventListener('dblclick', () => {
-        if (
-            SelectionEditor.activeMode === 'polygonal' &&
-            SelectionEditor.polyPoints.length > 2
-        ) {
-            SelectionEditor.polyPoints.push({
-                ...SelectionEditor.polyPoints[0]
-            });
-
-            if (typeof finalizeSelectionArea === 'function') {
-                finalizeSelectionArea();
-            }
+        if (SelectionEditor.activeMode === 'polygonal' && SelectionEditor.polyPoints.length > 2) {
+            SelectionEditor.polyPoints.push({ ...SelectionEditor.polyPoints[0] });
+            if (typeof finalizeSelectionArea === 'function') finalizeSelectionArea();
         }
     });
 });
